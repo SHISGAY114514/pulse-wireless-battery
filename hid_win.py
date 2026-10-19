@@ -226,11 +226,7 @@ class HIDP_BUTTON_CAPS(ctypes.Structure):
         ("IsStringRange", ctypes.c_ubyte),
         ("IsDesignatorRange", ctypes.c_ubyte),
         ("IsAbsolute", ctypes.c_ubyte),
-        ("HasNull", ctypes.c_ubyte),
-        ("Reserved", ctypes.c_ubyte),
-        ("BitSize", wintypes.USHORT),
-        ("ReportCount", wintypes.USHORT),
-        ("Reserved2", wintypes.USHORT * 9),
+        ("Reserved", wintypes.ULONG * 10),
         ("u", _USAGE_UNION),
     ]
 
@@ -636,6 +632,20 @@ class HidDevice:
         return [arr[i] for i in range(length.value)]
 
     # -- 报文读写 ------------------------------------------------------
+    def button_caps(self, report_type: int = HidP_Output) -> list[HIDP_BUTTON_CAPS]:
+        if not self._preparsed:
+            return []
+        count = {HidP_Input: self.caps.NumberInputButtonCaps,
+                 HidP_Output: self.caps.NumberOutputButtonCaps,
+                 HidP_Feature: self.caps.NumberFeatureButtonCaps}[report_type]
+        if not count:
+            return []
+        length = wintypes.USHORT(count)
+        arr = (HIDP_BUTTON_CAPS * count)()
+        status = hid.HidP_GetButtonCaps(report_type, ctypes.byref(arr),
+                                     ctypes.byref(length), self._preparsed)
+        return list(arr[:length.value]) if status == HIDP_STATUS_SUCCESS else []
+
     def get_feature_report(self, report_id: int, length: Optional[int] = None) -> bytes:
         """读取一条 Feature Report，返回的 bytes[0] 是 report id。"""
         if length is None:

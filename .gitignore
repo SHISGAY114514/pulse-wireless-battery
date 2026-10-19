@@ -17,3 +17,20 @@ tray_config.json
 .idea/
 Thumbs.db
 desktop.ini
+build/
+dist/
+release/
+*.spec
+!PULSE.spec
+
+# Local research, captures, device inventories and credentials are not releases.
+/research/
+/.research_packages/
+/captures/
+/firmware_samples/
+*.pcap
+*.pcapng
+/PULSE.exe
+/PULSE-*.zip
+.env
+.env.*

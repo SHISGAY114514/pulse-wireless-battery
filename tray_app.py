@@ -3,15 +3,16 @@
 
 界面约定
 --------
-* 通知区域两个图标：ATK 鼠标（纯数字）、DARKRIM 耳机（数字带深色底板）。
+* 本文件提供原生窗口、托盘结构及兼容入口；新版行为由 resident_app.py 管理。
+* 通知区域两个图标：卓威 EC2-DW（H/M/L）、漫步者 G5 MAX（数字带深色底板）。
   图标颜色随电量变化：绿 ≥60 / 黄 30-59 / 红 <30。
-* **右键图标 → 直接打开简洁界面**（界面里改设置：刷新间隔 / 开机自启 / 退出托盘）。
-* 左键图标 → 立刻刷新一次。
+* 右键图标显示打开面板、刷新、自启动和退出菜单。
+* 左键图标恢复已有面板。
 * 悬停显示 tooltip：设备名 + 电量 + 更新时间。
 
 其它
 ----
-* 开机自启用「启动」文件夹里的快捷方式（`电量托盘.lnk`，任务管理器可见）+ pythonw.exe。
+* 开机自启用「启动」文件夹里的快捷方式；打包版指向 PULSE.exe --background。
 * 低 CPU：SetTimer 驱动，空闲不轮询；读取在后台线程；默认 60 秒一轮。
 * **不写日志文件**：只有 `--debug` 时才往控制台打印。
 * 全 ctypes 调 shell32/user32，不依赖 pystray / Pillow。
@@ -41,6 +42,7 @@ import battery as bt
 import darkrim_proto as drp
 import win_icon
 import tray_common as tc
+import device_service
 
 BASE_DIR = tc.BASE_DIR
 APP_NAME = tc.APP_NAME
@@ -156,8 +158,8 @@ KERNEL32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL,
 
 TRAY_ICONS = [
     # (uID, key, 提示名, 是否带底板)
-    (1, "mouse", "ATK 鼠标", False),
-    (2, "headset", "DARKRIM 耳机", True),
+    (1, "mouse", "卓威 EC2-DW", False),
+    (2, "headset", "漫步者 G5 MAX", True),
 ]
 
 
@@ -173,22 +175,13 @@ def _find_iface(vid: int, usage_page: int, output_len: int = 0):
 
 
 def read_mouse() -> tuple[Optional[int], str]:
-    iface = _find_iface(0x373B, 0xFF05, 64) or _find_iface(0x373B, 0xFF02)
-    if iface is None:
-        return None, "没找到接收器"
-    try:
-        res = bt.strategy_vendor_protocol(iface)
-    except Exception as e:
-        return None, f"读取失败：{e}"
-    if res is None:
-        return None, "没有可用的读取方式"
-    if res.ok:
-        return res.level, ""
-    return None, res.detail or "无回复（动一下鼠标）"
+    row = device_service.read_mouse(hw.enumerate_hid())
+    return row.level, row.message
 
 
 def read_headset() -> tuple[Optional[int], str]:
-    return drp.read_battery_only(timeout=0.4)
+    row = device_service.read_headset(hw.enumerate_hid())
+    return row.level, row.message
 
 
 # --------------------------------------------------------------------------
@@ -303,8 +296,8 @@ class TrayApp:
 
     def _worker(self, hwnd: int) -> None:
         try:
-            self.levels["mouse"] = read_mouse()
-            self.levels["headset"] = read_headset()
+            for row in device_service.read_all():
+                self.levels[row.key] = (row.level, row.message)
         except Exception:
             self.log("读取异常:\n" + traceback.format_exc())
         USER32.PostMessageW(hwnd, MSG_REFRESH_DONE, 0, 0)
@@ -325,8 +318,7 @@ class TrayApp:
             return
         import subprocess
         try:
-            subprocess.Popen([tc.pythonw_path(),
-                              os.path.join(BASE_DIR, "my_devices.py")],
+            subprocess.Popen(tc.panel_command(),
                              cwd=BASE_DIR, creationflags=0x00000008)
             self.log("已打开简洁界面")
         except Exception as e:
@@ -459,4 +451,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Source-mode entry also uses the persistent combined application.
+    sys.argv.insert(1,"--background")
+    from pulse_app import main as resident_main
+    sys.exit(resident_main() or 0)

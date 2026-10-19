@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """tray_common.py —— 托盘程序与界面共用的配置 / 开机自启 / 进程间通信
 
-托盘程序（tray_app.py）和简洁界面（my_devices.py）是两个进程，
-共用这里的配置文件与窗口消息，界面里改设置后能立刻通知托盘生效。
+新版面板和原生托盘由 resident_app.py 的同一进程管理；这里提供
+配置、自启动快捷方式以及向已运行实例发送消息的 IPC 辅助函数。
 """
 
 from __future__ import annotations
@@ -17,20 +17,23 @@ from typing import Optional
 import win_link
 import win_shell
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "tray_config.json")
-PID_FILE = os.path.join(BASE_DIR, "tray_pid.txt")
+FROZEN = bool(getattr(sys, "frozen", False))
+BASE_DIR = os.path.dirname(sys.executable) if FROZEN else os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", BASE_DIR), "PULSE")
+CONFIG_PATH = os.path.join(DATA_DIR, "settings.json")
+PID_FILE = os.path.join(DATA_DIR, "resident.pid")
 
 APP_NAME = "DeviceBatteryTray"
-WND_CLASS = "DeviceBatteryTrayWnd"
-MUTEX_NAME = "Global\\DeviceBatteryTray_single_instance"
+WND_CLASS = "PulseResidentWindowV2"
+MUTEX_NAME = "Local\\PulseResident_single_instance_v2"
 
 # 界面标题（托盘用它来找到已打开的窗口）
-UI_TITLE = "我的设备电量"
+UI_TITLE = "PULSE · 设备电量"
 
 DEFAULT_CONFIG = {
     "interval": 60,        # 托盘轮询间隔（秒）
-    "autostart": True,     # 开机自启
+    "autostart": False,    # Only enable startup when explicitly selected in settings.
+    "auto_refresh": True,
 }
 
 INTERVAL_CHOICES = [(30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"),
@@ -60,7 +63,8 @@ USER32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
 def load_config() -> dict:
     cfg = dict(DEFAULT_CONFIG)
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        path = CONFIG_PATH if os.path.isfile(CONFIG_PATH) else os.path.join(BASE_DIR, "tray_config.json")
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
             for k in DEFAULT_CONFIG:
@@ -68,14 +72,22 @@ def load_config() -> dict:
                     cfg[k] = data[k]
     except Exception:
         pass
+    if type(cfg["interval"]) is not int or cfg["interval"] not in dict(INTERVAL_CHOICES):
+        cfg["interval"] = 60
+    for key in ("autostart", "auto_refresh"):
+        if type(cfg[key]) is not bool:
+            cfg[key] = DEFAULT_CONFIG[key]
     return cfg
 
 
 def save_config(cfg: dict) -> None:
     clean = {k: cfg.get(k, DEFAULT_CONFIG[k]) for k in DEFAULT_CONFIG}
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        temp = CONFIG_PATH + f".{os.getpid()}.tmp"
+        with open(temp, "w", encoding="utf-8") as f:
             json.dump(clean, f, ensure_ascii=False, indent=2)
+        os.replace(temp, CONFIG_PATH)
     except OSError:
         pass
 
@@ -88,6 +100,8 @@ def save_config(cfg: dict) -> None:
 # --------------------------------------------------------------------------
 def pythonw_path() -> str:
     exe = sys.executable or ""
+    if FROZEN:
+        return exe
     cand = os.path.join(os.path.dirname(exe), "pythonw.exe")
     return cand if os.path.exists(cand) else exe
 
@@ -97,7 +111,16 @@ def tray_script() -> str:
 
 
 def autostart_command() -> str:
-    return f'"{pythonw_path()}" "{tray_script()}"'
+    import subprocess
+    return subprocess.list2cmdline(tray_command())
+
+
+def tray_command() -> list[str]:
+    return [sys.executable, "--background"] if FROZEN else [pythonw_path(), os.path.join(BASE_DIR, "pulse_app.py"), "--background"]
+
+
+def panel_command() -> list[str]:
+    return [sys.executable] if FROZEN else [pythonw_path(), os.path.join(BASE_DIR, "my_devices.py")]
 
 
 STARTUP_LNK_NAME = "电量托盘.lnk"
@@ -206,10 +229,10 @@ def set_autostart(enabled: bool) -> bool:
     """
     if enabled:
         ok = win_shell.create_shortcut(
-            startup_lnk(), pythonw_path(),
-            arguments=f'"{tray_script()}"',
+            startup_lnk(), tray_command()[0],
+            arguments="--background" if FROZEN else f'"{os.path.join(BASE_DIR, "pulse_app.py")}" --background',
             workdir=BASE_DIR,
-            description="设备电量托盘：常驻显示 ATK 鼠标 / DARKRIM 耳机电量")
+            description="PULSE 设备电量：卓威 EC2-DW / 漫步者 G5 MAX")
         _set_startup_approved(True)
     else:
         _clear_startup_approved()
@@ -292,6 +315,11 @@ def install_desktop_links() -> dict:
 # --------------------------------------------------------------------------
 MSG_QUIT = "DeviceBatteryTray_Quit"       # 让托盘退出
 MSG_RELOAD = "DeviceBatteryTray_Reload"   # 让托盘重读配置
+MSG_SHOW = "PulseResident_Show"
+MSG_HIDE = "PulseResident_Hide"
+MSG_STATUS = "PulseResident_Status"
+MSG_REFRESH = "PulseResident_Refresh"
+MSG_EXIT = "PulseResident_Exit"
 
 
 def tray_hwnd() -> int:
@@ -327,7 +355,7 @@ def start_tray_app(wait_timeout: float = 6.0) -> bool:
         return True
     cleanup_zombie()
     try:
-        subprocess.Popen([pythonw_path(), os.path.join(BASE_DIR, "tray_app.py")],
+        subprocess.Popen(tray_command(),
                          cwd=BASE_DIR, creationflags=0x00000008)
     except Exception:
         return False
@@ -480,7 +508,10 @@ def cleanup_zombie(wait: float = 2.0) -> bool:
         return False
     image = os.path.basename(process_image(pid)).lower()
     cmd = process_cmdline(pid).lower()
-    if not (image.startswith("python") and "tray_app" in cmd):
+    source_tray = image.startswith("python") and "tray_app" in cmd
+    frozen_tray = (FROZEN and os.path.normcase(process_image(pid)) == os.path.normcase(sys.executable)
+                   and "--tray" in cmd)
+    if not (source_tray or frozen_tray):
         remove_pid()
         return False
     if not kill_pid(pid):

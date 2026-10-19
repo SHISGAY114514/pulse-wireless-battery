@@ -1,0 +1,2 @@
+# Development packaging only. Running from source uses the Python standard library.
+PyInstaller==6.22.3
