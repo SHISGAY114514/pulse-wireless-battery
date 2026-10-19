@@ -4,28 +4,13 @@ PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/
 
 本仓库维护者为 [SHISGAY114514](https://github.com/SHISGAY114514)。新增工作包括圆角桌面面板、同进程后台常驻与托盘恢复、自启动设置、漫步者 G5 MAX 状态读取、卓威 EC2-DW 电压与档位显示及相关测试。
 
-## PULSE 新增贡献：MIT
+## 项目许可证：MIT
 
-维护者将本次原创新增贡献按 [MIT 许可证](LICENSE) 授权，允许使用、复制、修改、商用及再分发，须保留版权和许可声明，且不提供担保。
+本仓库版本的项目源码和随附文档统一按根目录的 [MIT 许可证](LICENSE) 发布，允许使用、复制、修改、合并、发布、分发、再许可及商用，须保留版权和许可声明，且不提供担保。
 
-MIT 授权的完整新增文件或独立重写文件：
+授权依据记录：2026-10-20，维护者 SHISGAY114514 明确确认，已取得原项目作者 yszyszysz233 的授权，可以将原有代码按 MIT 开源。本仓库依据该确认，将先前仅覆盖 PULSE 新增贡献的 MIT 条款扩展为本仓库项目的统一许可证。
 
-- `device_service.py`、`edifier_proto.py`、`zowie_proto.py`
-- `modern_ui.py`、`resident_app.py`、`pulse_app.py`、当前版本的 `my_devices.py`
-- `make_icon.py`、`pulse.ico`
-- `test_devices.py`、`test_resident_lifecycle.py`
-- `PULSE.spec`、`requirements-build.txt`
-- 当前 `README.md`、`NOTICE.md`、`docs/PROTOCOLS.md`
-
-维护者对上游文件新增的原创修改部分也按 MIT 授权；这不改变这些文件中原有代码的授权状态。
-
-## 上游原有内容：授权待确认
-
-截至 2026-10-20 核查，上游仓库没有提供 `LICENSE` 文件，也未在其 README 中指定许可证。我们尚无原作者对整个项目采用 MIT 的授权依据。
-
-来自上游且不能由本仓库替原作者重新授权的内容包括：`app.py`、`battery.py`、`bt_battery.py`、`darkrim_proto.py`、`hid_win.py`、`tray_app.py`、`tray_common.py`、`win_icon.py`、`win_link.py`、`win_shell.py`、`PROMPT.md`、`docs/UPSTREAM_README.md`，以及 Git 历史中的其他上游内容。
-
-根目录的 `LICENSE` **仅覆盖 PULSE 原创贡献，不表示整个组合项目已取得 MIT 授权**。上游权利和署名继续保留。整套项目的进一步再分发或再许可，仍需先确认上游适用授权。
+原作者 yszyszysz233、维护者 SHISGAY114514 及 PULSE 贡献者的署名保留在 `LICENSE`、本说明及 Git 历史中。依赖项和第三方材料若有各自许可证，仍适用其原有条款。
 
 协议研究参考：
 

@@ -4,7 +4,7 @@ Windows 桌面电量面板，支持 **漫步者 G5 MAX 电量百分比**和 **�
 
 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer) 修改，保留原作者提交和源码。原项目介绍见 [上游 README](docs/UPSTREAM_README.md)。
 
-> 许可：PULSE 原创新增贡献采用 [MIT](LICENSE)，允许修改、商用和再分发，须保留版权和许可声明。上游原有代码尚未提供许可证，**整个组合项目的授权仍待确认**；文件范围及来源见 [NOTICE](NOTICE.md)。本次不提供修改版 EXE 的公开下载。
+> 本项目统一采用 [MIT 许可证](LICENSE)，允许修改、商用及再分发，须保留版权和许可声明。维护者已确认取得原作者对原有代码按 MIT 发布的授权，来源及授权记录见 [NOTICE](NOTICE.md)。
 
 ## 当前支持
 
