@@ -5,7 +5,7 @@
 ![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 [![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威多系列无线鼠标按对应固件的电量灯映射显示电压及高中低档**。支持圆角界面、后台常驻、系统托盘和可选的开机自启动。
+一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威多系列无线鼠标按对应固件的电量灯映射显示电压及高中低档**。采用深色电竞界面，支持后台常驻、系统托盘和可选的开机自启动。
 
 **原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
 
@@ -24,6 +24,7 @@
 
 ## 功能概览
 
+- 深色切角卡片、细线网格、青色与荧光黄点缀；设备插画由原生 Canvas 绘制，无额外图片依赖。
 - 一处查看鼠标和耳机状态，手动刷新或按设定间隔自动查询。
 - 关闭面板后继续在后台运行，点击托盘可恢复已有窗口。
 - 支持开机自启动、单实例启动和彻底退出。
@@ -138,7 +139,7 @@ python test_resident_lifecycle.py dist/PULSE.exe
 | 文件 | 用途 |
 |---|---|
 | `pulse_app.py` | GUI / CLI 入口 |
-| `modern_ui.py` | 圆角桌面面板 |
+| `modern_ui.py` | 深色电竞桌面面板及设置、详情弹窗 |
 | `zowie_profiles.py` | 按型号、固件区分的电量灯映射及验证范围 |
 | `resident_app.py` | 单实例、后台常驻及原生托盘线程 |
 | `device_service.py` | 面板、托盘与命令行共享的设备读取 |

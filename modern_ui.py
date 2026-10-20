@@ -1,4 +1,4 @@
-"""Rounded, dependency-free desktop dashboard built on the original HID backend."""
+"""Dark gaming dashboard; native Tk canvas artwork and Windows integration."""
 from __future__ import annotations
 import ctypes
 import queue
@@ -6,19 +6,30 @@ import threading
 import time
 from pathlib import Path
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import ttk
 import device_service as service
 import tray_common as tc
 import zowie_profiles as profiles
 
-BG = "#F3F6F7"
-INK = "#172F38"
-MUTED = "#72858C"
-LINE = "#E3EAED"
-GREEN = "#117B65"
-MINT = "#BCECD8"
-AMBER = "#A16B21"
-BAND_COLORS = {"高档":GREEN,"中档":AMBER,"低档":"#C85850"}
+BG = "#101116"
+SIDEBAR = "#14141B"
+SURFACE = "#1C1E26"
+INK = "#F1F3F5"
+MUTED = "#949BA9"
+LINE = "#30333E"
+CYAN = "#3AE4E5"
+LIME = "#D5F647"
+GREEN = "#66D9AA"
+MINT = CYAN
+AMBER = "#FFC16B"
+RED = "#FF7788"
+BAND_COLORS = {"高档":GREEN,"中档":AMBER,"低档":RED}
+
+
+def mix(a, b, amount):
+    rgb = [round(int(a[i:i+2],16)*(1-amount)+int(b[i:i+2],16)*amount) for i in (1,3,5)]
+    return "#"+"".join(f"{v:02x}" for v in rgb)
+
 
 def rounded(c, x, y, w, h, r=18, **kwargs):
     r = min(r, w / 2, h / 2)
@@ -26,267 +37,322 @@ def rounded(c, x, y, w, h, r=18, **kwargs):
               x+w,y+h,x+w-r,y+h,x+r,y+h,x,y+h,x,y+h-r,x,y+r,x,y]
     return c.create_polygon(points, smooth=True, splinesteps=32, **kwargs)
 
+
+def cut_panel(c, x, y, w, h, cut=12, **kwargs):
+    return c.create_polygon(x+cut,y,x+w,y,x+w,y+h-cut,x+w-cut,y+h,
+                            x,y+h,x,y+cut, smooth=False, **kwargs)
+
+
+def window_theme(window):
+    """Keep the system title bar, including native minimize/close behavior."""
+    try:
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        dwm = ctypes.WinDLL("dwmapi")
+        dwm.DwmSetWindowAttribute.argtypes = [ctypes.c_void_p,ctypes.c_uint,ctypes.c_void_p,ctypes.c_uint]
+        for attribute, value in ((20,1),(33,2),(35,0x1B1414),(36,0xF5F3F1)):
+            setting=ctypes.c_int(value)
+            dwm.DwmSetWindowAttribute(hwnd,attribute,ctypes.byref(setting),4)
+    except (OSError,AttributeError):
+        pass
+
+
 class Dashboard:
     def __init__(self, root):
-        self.root = root
-        self.root.title(tc.UI_TITLE)
-        self.root.geometry("1120x760")
-        self.root.minsize(1000, 720)
-        self.root.configure(bg=BG)
-        self.root.update_idletasks()
-        self._round_window()
-        self.cfg = tc.load_config()
-        self.rows = service.initial_readings()
-        self.messages = queue.Queue()
-        self.page = "devices"
-        self.busy = False
-        self.auto = self.cfg["auto_refresh"]
-        self.tray = None
-        self.notice = ""
-        self.timer = None
-        self.resize_timer = None
-        self.tray_busy = False
-        self.details_window = None
-        self.model_window = None
-        self.closed = False
-        self.visible = root.state() != "withdrawn"
-        self.c = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
-        self.c.pack(fill="both", expand=True)
-        self.c.bind("<Configure>", self.resize)
-        root.bind("<Control-r>", lambda _: self.refresh())
-        root.bind("<Control-comma>", lambda _: self.navigate("settings"))
-        root.bind("<Escape>", lambda _: self.navigate("devices"))
-        root.protocol("WM_DELETE_WINDOW", self.close)
-        root.after(150, self.refresh)
-        root.after(180, self.pump)
+        self.root=root
+        root.title(tc.UI_TITLE)
+        root.geometry("1120x760")
+        root.minsize(1000,720)
+        root.configure(bg=BG)
+        window_theme(root)
+        self._widget_theme()
+        self.cfg=tc.load_config()
+        self.rows=service.initial_readings()
+        self.messages=queue.Queue()
+        self.page="devices"
+        self.busy=False
+        self.auto=self.cfg["auto_refresh"]
+        self.tray=None
+        self.notice=""
+        self.timer=None
+        self.resize_timer=None
+        self.tray_busy=False
+        self.details_window=None
+        self.model_window=None
+        self.closed=False
+        self.visible=root.state()!="withdrawn"
+        self.c=tk.Canvas(root,bg=BG,highlightthickness=0,bd=0)
+        self.c.pack(fill="both",expand=True)
+        self.c.bind("<Configure>",self.resize)
+        root.bind("<Control-r>",lambda _:self.refresh())
+        root.bind("<Control-comma>",lambda _:self.navigate("settings"))
+        root.bind("<Escape>",lambda _:self.navigate("devices"))
+        root.protocol("WM_DELETE_WINDOW",self.close)
+        root.after(150,self.refresh)
+        root.after(180,self.pump)
         self.draw()
 
-    def _round_window(self):
-        try:
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            value = ctypes.c_int(2)  # DWMWCP_ROUND on Windows 11.
-            dwm = ctypes.WinDLL("dwmapi")
-            dwm.DwmSetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_uint,
-                                                 ctypes.c_void_p, ctypes.c_uint]
-            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(value), 4)
-        except (OSError, AttributeError):
-            pass
+    def _widget_theme(self):
+        style=ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("Pulse.TCombobox",fieldbackground=SURFACE,background=LINE,
+                        foreground=INK,arrowcolor=CYAN,bordercolor=LINE,lightcolor=LINE,
+                        darkcolor=LINE,padding=10,selectbackground="#23454C",selectforeground=INK)
+        style.map("Pulse.TCombobox",fieldbackground=[("readonly",SURFACE)],
+                  foreground=[("readonly",INK)],bordercolor=[("focus",CYAN)])
+        style.configure("Pulse.TButton",background=LIME,foreground=BG,borderwidth=0,
+                        padding=(18,10),font=("Microsoft YaHei UI",10,"bold"))
+        style.map("Pulse.TButton",background=[("active","#E4FF78")],foreground=[("active",BG)])
+        style.configure("Pulse.Vertical.TScrollbar",background=LINE,troughcolor=BG,
+                        arrowcolor=MUTED,bordercolor=BG,lightcolor=LINE,darkcolor=LINE,
+                        gripcount=0,arrowsize=12)
+        style.map("Pulse.Vertical.TScrollbar",background=[("active","#4C6269")])
+        self.root.option_add("*TCombobox*Listbox.background",SURFACE)
+        self.root.option_add("*TCombobox*Listbox.foreground",INK)
+        self.root.option_add("*TCombobox*Listbox.selectBackground","#27555B")
+        self.root.option_add("*TCombobox*Listbox.selectForeground",INK)
 
-    def text(self, x, y, value, size=14, color=INK, weight="normal", **kwargs):
-        return self.c.create_text(x, y, text=value, fill=color, anchor="nw",
-                                  font=("Microsoft YaHei UI", -size, weight), **kwargs)
+    def text(self,x,y,value,size=14,color=INK,weight="normal",**kwargs):
+        family=kwargs.pop("family","Microsoft YaHei UI")
+        return self.c.create_text(x,y,text=value,fill=color,anchor="nw",
+                                  font=(family,-size,weight),**kwargs)
 
-    def button(self, x, y, w, h, label, command, fill=INK, color="#FFFFFF", tag=None):
-        tag = tag or f"button_{len(self.c.find_all())}"
-        shape = rounded(self.c, x, y, w, h, 13, fill=fill, outline="", tags=tag)
-        self.c.create_text(x+w/2, y+h/2, text=label, fill=color,
-                           font=("Microsoft YaHei UI", -13, "bold"), tags=tag)
-        self.c.tag_bind(tag, "<Button-1>", lambda _: command())
-        self.c.tag_bind(tag, "<Enter>", lambda _: self.c.configure(cursor="hand2"))
-        self.c.tag_bind(tag, "<Leave>", lambda _: self.c.configure(cursor=""))
+    def bind_action(self,tag,command,shape=None,base=None,hover=None):
+        self.c.tag_bind(tag,"<Button-1>",lambda _:command())
+        def enter(_):
+            self.c.configure(cursor="hand2")
+            if shape and hover:self.c.itemconfigure(shape,fill=hover)
+        def leave(_):
+            self.c.configure(cursor="")
+            if shape and base:self.c.itemconfigure(shape,fill=base)
+        self.c.tag_bind(tag,"<Enter>",enter)
+        self.c.tag_bind(tag,"<Leave>",leave)
+
+    def button(self,x,y,w,h,label,command,fill=SURFACE,color=INK,tag=None):
+        tag=tag or f"button_{len(self.c.find_all())}"
+        shape=cut_panel(self.c,x,y,w,h,7,fill=fill,outline=LINE if fill==SURFACE else fill,tags=tag)
+        self.c.create_text(x+w/2,y+h/2,text=label,fill=color,
+                           font=("Microsoft YaHei UI",-12,"bold"),tags=tag)
+        self.bind_action(tag,command,shape,fill,mix(fill,"#FFFFFF",.09))
         return shape
 
-    def pill(self, x, y, label, fill, color, width=120):
-        rounded(self.c, x, y, width, 28, 14, fill=fill, outline="")
-        self.c.create_oval(x+11,y+11,x+17,y+17,fill=color,outline="")
-        self.text(x+24, y+5, label, 11, color)
+    def pill(self,x,y,label,fill,color,width=120):
+        cut_panel(self.c,x,y,width,26,5,fill=fill,outline=mix(fill,color,.25))
+        self.c.create_rectangle(x+10,y+11,x+14,y+15,fill=color,outline="")
+        self.text(x+22,y+4,label,11,color)
 
-    def resize(self, _event):
-        if self.resize_timer:
-            self.root.after_cancel(self.resize_timer)
-        self.resize_timer = self.root.after(35, self.draw)
+    def resize(self,_event):
+        if self.resize_timer:self.root.after_cancel(self.resize_timer)
+        self.resize_timer=self.root.after(35,self.draw)
 
-    def navigate(self, page):
-        self.page = page
+    def navigate(self,page):
+        self.page=page
         self.draw()
 
     def draw(self):
-        if self.closed:
-            return
-        self.resize_timer = None
-        c = self.c
+        if self.closed:return
+        self.resize_timer=None
+        c=self.c
         c.delete("all")
-        w, h = max(c.winfo_width(), 1000), max(c.winfo_height(), 720)
-        c.create_rectangle(0,0,204,h,fill=INK,outline="")
-        rounded(c,24,29,34,34,11,fill=MINT,outline="")
-        c.create_polygon(43,35,35,46,41,46,38,57,49,43,42,43,fill=INK)
-        self.text(68,27,"PULSE",20,"#FFFFFF","bold")
-        self.text(69,53,"设备电量",10,"#A8BDC3")
-        self.text(27,111,"工作台",11,"#829DA6")
-        for page,label,y in [("devices","设备概览",146),("settings","偏好设置",205)]:
-            selected = self.page == page
-            tag = f"nav_{page}"
-            rounded(c,17,y-8,170,45,13,fill="#2B444C" if selected else INK,
-                    outline="",tags=tag)
-            if page == "devices":
-                for dx,dy in [(0,0),(9,0),(0,9),(9,9)]:
-                    rounded(c,33+dx,y+5+dy,6,6,2,fill=MINT if selected else "#92ADB5",
-                            outline="",tags=tag)
+        w,h=max(c.winfo_width(),1000),max(c.winfo_height(),720)
+        # A quiet diagonal lattice, with restrained violet and cyan depth.
+        for y in range(0,h,4):
+            c.create_rectangle(184,y,w,y+4,fill=mix("#1A141F",BG,min(1,y/(h*.8))),outline="")
+        for gx in range(184,w,48):c.create_line(gx,100,gx,h,fill="#1D1D27")
+        for gy in range(100,h,48):c.create_line(184,gy,w,gy,fill="#1D1D27")
+        for gx in range(184-(h-100),w,140):
+            sx,ex=max(184,gx),min(w,gx+h-100)
+            if sx<ex:c.create_line(sx,100+sx-gx,ex,100+ex-gx,fill="#23202A")
+        c.create_rectangle(0,0,184,h,fill=SIDEBAR,outline="")
+        c.create_line(184,0,184,h,fill=LINE)
+        c.create_polygon(24,31,30,31,23,53,17,53,fill=LIME)
+        c.create_polygon(34,31,38,31,31,53,27,53,fill=LIME)
+        self.text(46,25,"PULSE",26,INK,"bold",family="Bahnschrift")
+        self.text(25,66,"无线设备电量",11,MUTED)
+        c.create_line(24,103,160,103,fill=LINE)
+        self.text(25,126,"设备管理",10,"#707786")
+        for page,label,y in [("devices","设备概览",168),("settings","偏好设置",226)]:
+            chosen=self.page==page
+            tag=f"nav_{page}"
+            shape=cut_panel(c,14,y-10,156,45,8,fill="#222B32" if chosen else SIDEBAR,
+                            outline="#35484C" if chosen else SIDEBAR,tags=tag)
+            if chosen:c.create_rectangle(14,y+2,17,y+21,fill=CYAN,outline="",tags=tag)
+            col=CYAN if chosen else MUTED
+            if page=="devices":
+                for dx,dy in [(0,0),(10,0),(0,10),(10,10)]:
+                    c.create_rectangle(31+dx,y+3+dy,37+dx,y+9+dy,outline=col,tags=tag)
             else:
-                c.create_oval(34,y+4,49,y+19,outline=MINT if selected else "#92ADB5",width=2,tags=tag)
-                c.create_oval(39,y+9,44,y+14,fill="#92ADB5",outline="",tags=tag)
-            self.text(66,y+2,label,14,"#FFFFFF" if selected else "#ACC0C7",tags=tag)
-            c.tag_bind(tag,"<Button-1>",lambda _,p=page:self.navigate(p))
-            c.tag_bind(tag,"<Enter>",lambda _:c.configure(cursor="hand2"))
-            c.tag_bind(tag,"<Leave>",lambda _:c.configure(cursor=""))
-        rounded(c,20,h-134,164,82,15,fill="#213B44",outline="")
-        self.text(36,h-119,"2.4 GHz",18,MINT,"bold")
-        self.text(36,h-90,"你的无线设备，一处掌握",11,"#A6BEC6")
-        self.text(26,h-32,"PULSE  /  本地设备面板",10,"#7E9CA6")
-        x = 240
-        self.text(x,40,"设备概览" if self.page == "devices" else "偏好设置",27,INK,"bold")
-        self.text(x,84,"让每一次连接，都心中有数。" if self.page == "devices"
-                  else "按照你的习惯，保持电量同步。",13,MUTED)
-        self.button(w-178,43,138,42,"同步中…" if self.busy else "↻  刷新电量",
-                    self.refresh,fill="#637D85" if self.busy else INK,tag="refresh")
-        if self.page == "devices":
-            self.draw_devices(x,w,h)
-        else:
-            self.draw_settings(x,w,h)
-        last = max((r.checked_at for r in self.rows),default=0)
-        stamp = time.strftime("%H:%M:%S",time.localtime(last)) if last else "等待首次同步"
-        self.text(x,h-35,"●  " + ("正在同步设备…" if self.busy else f"更新于 {stamp}"),11,MUTED)
-        self.c.create_text(w-40,h-28,text=self.notice or "Ctrl + R  刷新",anchor="e",
-                           font=("Microsoft YaHei UI",-11),fill=MUTED)
+                c.create_oval(31,y+3,47,y+19,outline=col,width=1.5,tags=tag)
+                c.create_oval(37,y+9,41,y+13,fill=col,outline="",tags=tag)
+            self.text(62,y,label,13,INK if chosen else MUTED,"bold" if chosen else "normal",tags=tag)
+            self.bind_action(tag,lambda p=page:self.navigate(p),shape,"#222B32" if chosen else SIDEBAR,"#242832")
+        cut_panel(c,18,h-146,148,86,10,fill="#1B2429",outline="#2D4145")
+        self.text(31,h-130,"2.4",25,CYAN,"bold",family="Bahnschrift")
+        self.text(79,h-120,"GHz",12,CYAN,family="Consolas")
+        self.text(31,h-93,"后台常驻  /  已就绪" if self.tray else "本地设备连接",10,MUTED)
+        self.text(25,h-31,"PULSE  /  DESKTOP",9,"#646C7B",family="Consolas")
+        x=216
+        self.text(x,26,"设备概览" if self.page=="devices" else "偏好设置",27,INK,"bold")
+        self.text(x,68,"设备状态与电量" if self.page=="devices" else "同步、型号与启动选项",11,MUTED)
+        self.button(w-168,31,136,42,"同步中…" if self.busy else "↻  刷新电量",self.refresh,
+                    fill="#3C4543" if self.busy else LIME,color=BG if not self.busy else INK,tag="refresh")
+        c.create_line(216,100,w-32,100,fill=LINE)
+        c.create_line(w-168,100,w-32,100,fill=LIME,width=2)
+        if self.page=="devices":self.draw_devices(x,w,h)
+        else:self.draw_settings(x,w,h)
+        last=max((r.checked_at for r in self.rows),default=0)
+        stamp=time.strftime("%H:%M:%S",time.localtime(last)) if last else "等待首次同步"
+        c.create_rectangle(x,h-30,x+4,h-26,fill=CYAN,outline="")
+        self.text(x+13,h-36,"正在同步设备…" if self.busy else f"最近查询  {stamp}",10,MUTED)
+        c.create_text(w-32,h-29,text=self.notice or "Ctrl + R  刷新",anchor="e",
+                      font=("Microsoft YaHei UI",-10),fill=MUTED)
 
-    def draw_devices(self, x, w, h):
-        receivers = sum(r.receiver for r in self.rows)
-        self.pill(x,125,f"{receivers} 个接收器已连接","#E5EEE9",GREEN,156)
-        interval = self.cfg["interval"]
-        self.c.create_text(w-40,139,text=(f"自动同步  ·  每 {interval} 秒" if self.auto else "自动同步已暂停"),
-                           anchor="e",fill=MUTED,font=("Microsoft YaHei UI",-12))
-        gap, right = 22, w-40
-        cw = (right-x-gap)/2
-        bottom = h-183
-        for i,row in enumerate(self.rows):
-            self.draw_card(x+i*(cw+gap),177,cw,bottom-177,row,i)
-        y = h-157
-        rounded(self.c,x,y,right-x,91,19,fill="#FFFFFF",outline=LINE)
-        good = sum(r.level is not None or r.voltage is not None for r in self.rows)
-        rounded(self.c,x+19,y+20,44,44,13,fill="#E5F2EB",outline="")
-        self.c.create_line(x+31,y+42,x+38,y+49,x+51,y+34,fill=GREEN,width=2.4,
-                           capstyle="round",joinstyle="round")
-        self.text(x+79,y+17,f"已同步 {good} 台设备的电量" if not self.busy else "正在与设备同步",15,INK,"bold")
-        unavailable = [r for r in self.rows if r.receiver and r.level is None and r.voltage is None]
-        if unavailable:
-            hint = "卓威接收器已就绪，电量暂不可用。" if unavailable[0].key == "mouse" else unavailable[0].message
-        else:
-            hint = "鼠标显示电量档位，耳机显示设备返回的百分比。" if receivers else "插入接收器并开启设备后，点击刷新。"
-        self.text(x+79,y+46,hint,12,MUTED)
+    def draw_devices(self,x,w,h):
+        c=self.c
+        receivers=sum(r.receiver for r in self.rows)
+        self.pill(x,119,f"{receivers} 个接收器已连接","#1A2C2C",CYAN,158)
+        c.create_text(w-32,132,text=f"自动同步 / {self.cfg['interval']} 秒" if self.auto else "自动同步已暂停",
+                      anchor="e",fill=MUTED,font=("Microsoft YaHei UI",-11))
+        gap=20
+        card_w=(w-32-x-gap)/2
+        card_h=h-282
+        for i,row in enumerate(self.rows):self.draw_card(x+i*(card_w+gap),165,card_w,card_h,row,i)
+        y=h-95
+        c.create_line(x,y-10,w-32,y-10,fill=LINE)
+        good=sum(r.level is not None or r.voltage is not None for r in self.rows)
+        self.text(x,y+4,f"{good:02d}",24,CYAN,"bold",family="Bahnschrift")
+        self.text(x+42,y+3,"台设备已同步" if not self.busy else "设备同步中",12,INK,"bold")
+        unavailable=[r for r in self.rows if r.receiver and r.level is None and r.voltage is None]
+        hint=unavailable[0].message if unavailable else "鼠标 / 电量档位     耳机 / 电量百分比"
+        self.text(x+42,y+26,hint,10,MUTED)
 
-    def draw_card(self, x, y, w, h, row, index):
-        c = self.c
-        rounded(c,x,y+3,w,h,22,fill="#E9EEF0",outline="")
-        rounded(c,x,y,w,h,22,fill="#FFFFFF",outline=LINE)
-        self.text(x+25,y+22,"0"+str(index+1)+"  /  "+("MOUSE" if row.key=="mouse" else "HEADSET"),10,MUTED,"bold")
-        if row.voltage is not None:
-            color=BAND_COLORS.get(row.display_band,GREEN)
-            label="电量"+row.display_band if row.display_band else "已读取电压"
-            fill={"高档":"#E2F3EB","中档":"#F8EEDB","低档":"#F9E9E6"}.get(row.display_band,"#E2F3EB")
-        elif row.level is not None:
-            label,fill,color = ("正在充电","#E2F3EB",GREEN) if row.charging else ("已连接","#E2F3EB",GREEN)
-        elif row.receiver:
-            label,fill,color = "接收器已连接","#F8EEDB",AMBER
-        else:
-            label,fill,color = "未连接","#EDF0F2",MUTED
-        self.pill(x+w-141,y+17,label,fill,color,116)
-        self.text(x+25,y+62,row.name,21,INK,"bold")
-        self.text(x+25,y+94,row.category+"  ·  "+row.connection,12,MUTED)
-        art_x, art_y = x+w-105, y+176
-        self.device_art(art_x,art_y,row.key)
-        number = row.display_band or (f"{row.voltage:.2f}" if row.voltage is not None else ("—" if row.level is None else str(row.level)))
-        color = BAND_COLORS.get(row.display_band,INK if row.level is None or row.level>=30 else "#C85850")
-        self.text(x+25,y+149,number,48 if row.voltage is not None else 62,color,"bold")
+    def draw_card(self,x,y,w,h,row,index):
+        c=self.c
+        accent=LIME if row.key=="mouse" else CYAN
+        cut_panel(c,x,y,w,h,16,fill=SURFACE,outline=LINE)
+        # Bottom color field is clipped to the card's cut corner.
+        for dy in range(0,126,3):
+            yy=y+h-126+dy
+            end=x+w-max(0,16-(126-dy))
+            c.create_line(x+1,yy,end-1,yy,fill=mix(SURFACE,"#173330" if row.key=="mouse" else "#13383C",dy/150),width=3)
+        cut_panel(c,x,y,w,h,16,fill="",outline=LINE)
+        c.create_line(x+17,y,x+w-20,y,fill=accent,width=2)
+        self.text(x+24,y+22,f"0{index+1}  /  "+("MOUSE" if row.key=="mouse" else "HEADSET"),10,accent,"bold",family="Consolas")
+        c.create_text(x+w-24,y+29,text="2.4G" if row.connection=="2.4G 无线" else "USB",anchor="e",
+                      fill=MUTED,font=("Consolas",-10))
+        # Fit long model names (including Glossy) without clipping at minimum size.
+        from tkinter import font as tkfont
+        size=21
+        while size>15 and tkfont.Font(family="Microsoft YaHei UI",size=-size,weight="bold").measure(row.name)>w-48:size-=1
+        self.text(x+24,y+59,row.name,size,INK,"bold")
+        self.text(x+24,y+94,row.category,11,MUTED)
+        art_x,art_y=x+w-104,y+204
+        self.device_art(art_x,art_y,row.key,accent)
+        number=row.display_band or (f"{row.voltage:.2f}" if row.voltage is not None else "—" if row.level is None else str(row.level))
+        color=BAND_COLORS.get(row.display_band,INK if row.level is None or row.level>=30 else RED)
+        self.text(x+24,y+146,number,47 if row.voltage is not None else 65,color,"bold",
+                  family="Microsoft YaHei UI" if row.display_band else "Bahnschrift")
         if row.display_band:
-            self.text(x+28,y+207,f"最近接收 {row.voltage:.2f} V",14,MUTED)
+            self.text(x+27,y+211,f"最近接收  {row.voltage:.2f} V",12,MUTED)
         elif row.voltage is not None:
-            self.text(x+143,y+178,"V",21,MUTED)
+            self.text(x+142,y+175,"V",18,MUTED,family="Bahnschrift")
         elif row.level is not None:
-            self.text(x+30+len(number)*37,y+182,"%",22,MUTED)
-        self.text(x+28,y+235,"电压估算档位 · 采样时间未知" if row.voltage is not None else ("尚未取得电量" if row.level is None else
-                  ("正在充电" if row.charging else ("电量偏低，记得充电" if row.level<30 else "剩余电量"))),12,MUTED)
-        by = y+h-83
-        bar_w=w-54
-        for j in range(0 if row.voltage is not None else 24):
-            segment=bar_w/24
-            active = row.level is not None and j<round(row.level*24/100)
-            col = (GREEN if row.level>=30 else "#D2675F") if active else "#EDF1F2"
-            rounded(c,x+27+j*segment,by,segment-3,9,3,fill=col,outline="")
+            self.text(x+26+len(number)*35,y+183,"%",18,MUTED,family="Bahnschrift")
+        label=("缓存电压 · 采样时间未知" if row.voltage is not None else "尚未取得电量" if row.level is None
+               else "正在充电" if row.charging else "剩余电量")
+        self.text(x+27,y+244,label,10,MUTED)
+        by=y+h-107
+        bar_w=w-48
         if row.display_band:
             for j,band in enumerate(("低档","中档","高档")):
                 selected=band==row.display_band
-                bx=x+27+j*bar_w/3
-                rounded(c,bx,by-8,bar_w/3-7,25,8,fill=BAND_COLORS[band] if selected else "#EDF1F2",outline="")
-                c.create_text(bx+(bar_w/3-7)/2,by+5,text=band[0],fill="#FFFFFF" if selected else MUTED,
-                              font=("Microsoft YaHei UI",-12,"bold" if selected else "normal"))
+                bx=x+24+j*bar_w/3
+                col=BAND_COLORS[band]
+                cut_panel(c,bx,by,bar_w/3-6,28,5,fill=mix("#1D272C",col,.18) if selected else "#222830",
+                          outline=col if selected else "#303941")
+                c.create_text(bx+(bar_w/3-6)/2,by+14,text=band,
+                              fill=col if selected else MUTED,font=("Microsoft YaHei UI",-11,"bold" if selected else "normal"))
         elif row.voltage is not None:
-            self.text(x+27,by-6,"灯档位推断："+row.battery_band if row.battery_band else "尚未取得设备原生百分比",11,MUTED)
-        c.create_line(x+25,y+h-52,x+w-25,y+h-52,fill=LINE)
-        self.text(x+26,y+h-34,row.source or "等待设备连接",11,
-                  AMBER if row.level is None and row.voltage is None and row.receiver else MUTED)
-        tag=f"detail_{row.key}"
-        self.text(x+w-94,y+h-34,"查看详情  ›",11,INK,"bold",tags=tag)
-        c.tag_bind(tag,"<Button-1>",lambda _,r=row:self.details(r))
-        c.tag_bind(tag,"<Enter>",lambda _:c.configure(cursor="hand2"))
-        c.tag_bind(tag,"<Leave>",lambda _:c.configure(cursor=""))
-
-    def device_art(self,x,y,kind):
-        c=self.c
-        c.create_oval(x-66,y-66,x+66,y+66,fill="#EDF4F3" if kind=="headset" else "#EEF2F6",outline="")
-        if kind=="mouse":
-            c.create_oval(x-30,y+43,x+31,y+51,fill="#DDE6EA",outline="")
-            rounded(c,x-30,y-48,62,94,29,fill="#304A55",outline="#213B46",width=2)
-            c.create_line(x,y-46,x,y-13,fill="#9BAFB6",width=1.4)
-            rounded(c,x-4,y-31,8,19,4,fill="#A4C3C8",outline="")
-            c.create_arc(x-30,y-30,x+30,y+4,start=185,extent=170,style="arc",outline="#637F8B",width=1.3)
-            c.create_line(x-27,y-10,x-27,y+10,fill="#71919A",width=3,capstyle="round")
-            c.create_text(x,y+24,text="Z",fill="#A8C0C6",font=("Segoe UI",-15,"bold"))
+            self.text(x+24,by+6,"档位未验证 · 查看详情",11,AMBER)
         else:
-            c.create_oval(x-41,y+43,x+43,y+51,fill="#D9E8E3",outline="")
-            c.create_arc(x-41,y-49,x+41,y+45,start=0,extent=180,style="arc",outline="#254C4B",width=12)
-            c.create_arc(x-33,y-41,x+33,y+37,start=0,extent=180,style="arc",outline="#88B8A7",width=3)
-            rounded(c,x-48,y-4,24,48,10,fill="#355D59",outline="")
-            rounded(c,x+24,y-4,24,48,10,fill="#355D59",outline="")
-            rounded(c,x-43,y+2,12,35,5,fill="#81B29F",outline="")
-            rounded(c,x+31,y+2,12,35,5,fill="#81B29F",outline="")
-            c.create_line(x-34,y+32,x-23,y+51,x-6,y+51,fill="#254C4B",width=4,capstyle="round",smooth=True)
-            rounded(c,x-9,y+47,13,7,3,fill="#254C4B",outline="")
+            self.text(x+24,by-20,"电量",10,MUTED)
+            for j in range(28):
+                segment=bar_w/28
+                active=row.level is not None and j<round(row.level*28/100)
+                col=(CYAN if row.level>=30 else RED) if active else "#30363D"
+                c.create_rectangle(x+24+j*segment,by+3,x+24+(j+1)*segment-3,by+13,fill=col,outline="")
+        c.create_line(x+24,y+h-53,x+w-24,y+h-53,fill="#344047")
+        state="正在充电" if row.charging else "已同步" if row.voltage is not None or row.level is not None else "等待设备"
+        dot=accent if row.voltage is not None or row.level is not None else MUTED
+        c.create_rectangle(x+25,y+h-31,x+29,y+h-27,fill=dot,outline="")
+        self.text(x+37,y+h-38,state,10,MUTED)
+        tag=f"detail_{row.key}"
+        self.text(x+w-95,y+h-38,"连接详情  ↗",10,accent,"bold",tags=tag)
+        self.bind_action(tag,lambda r=row:self.details(r))
+
+    def device_art(self,x,y,kind,accent=CYAN):
+        c=self.c
+        for radius in range(78,35,-7):
+            c.create_oval(x-radius,y-radius,x+radius,y+radius,fill=mix(SURFACE,"#20373A",(78-radius)/100),outline="")
+        c.create_oval(x-76,y-76,x+76,y+76,outline="#34434A",dash=(2,7))
+        for dx in (-1,1):
+            c.create_line(x+dx*65,y-58,x+dx*76,y-58,x+dx*76,y-46,fill=mix(SURFACE,accent,.6))
+        c.create_oval(x-47,y+58,x+47,y+65,fill="#11171C",outline="")
+        if kind=="mouse":
+            rounded(c,x-34,y-58,68,116,31,fill="#10151C",outline="#56616C",width=1.5)
+            rounded(c,x-29,y-54,58,107,27,fill="#252C35",outline="")
+            c.create_line(x,y-55,x,y-9,fill="#65727B",width=1)
+            c.create_arc(x-29,y-37,x+29,y+3,start=190,extent=160,style="arc",outline="#596672")
+            rounded(c,x-5,y-36,10,23,4,fill=accent,outline="")
+            c.create_line(x-31,y-7,x-31,y+15,fill="#74808A",width=3,capstyle="round")
+            c.create_text(x,y+30,text="Z",fill="#B6C4C9",font=("Bahnschrift",-18,"bold"))
+        else:
+            c.create_arc(x-44,y-58,x+44,y+44,start=0,extent=180,style="arc",outline="#0D1218",width=17)
+            c.create_arc(x-44,y-58,x+44,y+44,start=0,extent=180,style="arc",outline="#69727D",width=2)
+            c.create_arc(x-34,y-47,x+34,y+37,start=0,extent=180,style="arc",outline="#35414B",width=6)
+            for dx in (-1,1):
+                cx=x+dx*39
+                rounded(c,cx-14,y-10,28,60,9,fill="#11171E",outline="#606E79")
+                rounded(c,cx-10,y-5,20,49,7,fill="#303A45",outline="")
+                c.create_line(cx+dx*6,y+5,cx+dx*6,y+30,fill=accent,width=2)
+            c.create_line(x-39,y+37,x-28,y+57,x-7,y+57,fill="#899BA6",width=3,smooth=True)
+            rounded(c,x-10,y+54,16,6,3,fill=accent,outline="")
 
     def toggle(self,x,y,value,callback):
         tag=f"toggle_{len(self.c.find_all())}"
-        rounded(self.c,x,y,46,26,13,fill=GREEN if value else "#D6E0E3",outline="",tags=tag)
-        self.c.create_oval(x+(24 if value else 4),y+4,x+(42 if value else 22),y+22,
-                           fill="#FFFFFF",outline="",tags=tag)
-        self.c.tag_bind(tag,"<Button-1>",lambda _:callback())
-        self.c.tag_bind(tag,"<Enter>",lambda _:self.c.configure(cursor="hand2"))
-        self.c.tag_bind(tag,"<Leave>",lambda _:self.c.configure(cursor=""))
+        cut_panel(self.c,x,y,46,26,6,fill="#233F40" if value else "#292C35",outline=CYAN if value else "#474B58",tags=tag)
+        self.c.create_rectangle(x+(26 if value else 5),y+5,x+(40 if value else 19),y+21,
+                                fill=CYAN if value else MUTED,outline="",tags=tag)
+        self.bind_action(tag,callback)
 
     def draw_settings(self,x,w,h):
-        right=w-40
-        rounded(self.c,x,139,right-x,h-215,21,fill="#FFFFFF",outline=LINE)
+        right=w-32
+        c=self.c
+        cut_panel(c,x,128,right-x,h-189,16,fill=SURFACE,outline=LINE)
+        c.create_line(x+17,128,x+150,128,fill=CYAN,width=2)
         tx=x+28
-        self.text(tx,166,"同步、设备与启动",17,INK,"bold")
-        self.text(tx,218,"自动刷新电量",14,INK,"bold")
-        self.text(tx,245,"关闭窗口后仍会在后台定时同步。",12,MUTED)
-        self.toggle(right-76,222,self.auto,self.toggle_auto)
-        self.c.create_line(tx,282,right-28,282,fill=LINE)
-        self.text(tx,305,"刷新间隔",14,INK,"bold")
+        self.text(tx,149,"偏好设置",17,INK,"bold")
+        self.text(tx,193,"自动刷新电量",13,INK,"bold")
+        self.text(tx,219,"关闭窗口后仍按设定间隔查询。",11,MUTED)
+        self.toggle(right-76,197,self.auto,self.toggle_auto)
+        c.create_line(tx,257,right-28,257,fill=LINE)
+        self.text(tx,277,"刷新间隔",13,INK,"bold")
         for i,(seconds,label) in enumerate([(30,"30 秒"),(60,"1 分钟"),(120,"2 分钟"),(300,"5 分钟")]):
             chosen=self.cfg["interval"]==seconds
-            self.button(tx+i*111,345,101,37,label,lambda s=seconds:self.set_interval(s),
-                        fill=INK if chosen else BG,color="#FFFFFF" if chosen else MUTED)
-        self.c.create_line(tx,407,right-28,407,fill=LINE)
-        self.text(tx,429,"卓威鼠标型号",14,INK,"bold")
-        self.text(tx,457,"当前："+self.cfg["zowie_model"].replace("auto","未选择（仅读电压）"),12,MUTED)
-        self.button(right-170,431,140,37,"选择型号",self.choose_model,
-                    fill="#E8F0ED",color=GREEN)
-        self.c.create_line(tx,495,right-28,495,fill=LINE)
-        self.text(tx,518,"开机启动托盘",14,INK,"bold")
-        self.text(tx,546,"登录 Windows 后自动显示电量图标。",12,MUTED)
-        self.toggle(right-76,521,tc.is_autostart_enabled(),self.toggle_boot)
-        self.text(tx,h-119,"彻底停止后台运行，请使用右侧退出按钮。",11,MUTED)
-        self.button(right-170,h-129,140,37,"退出 PULSE",self.exit_app,
-                    fill="#F9E9E6",color="#A4544B")
+            self.button(tx+i*112,312,102,36,label,lambda s=seconds:self.set_interval(s),
+                        fill=LIME if chosen else "#272B34",color=BG if chosen else MUTED)
+        c.create_line(tx,371,right-28,371,fill=LINE)
+        self.text(tx,394,"卓威鼠标型号",13,INK,"bold")
+        self.text(tx,422,self.cfg["zowie_model"].replace("auto","未选择（仅读电压）"),11,MUTED)
+        self.button(right-164,394,136,37,"选择型号  ↗",self.choose_model,fill="#24383C",color=CYAN)
+        c.create_line(tx,462,right-28,462,fill=LINE)
+        self.text(tx,485,"开机启动托盘",13,INK,"bold")
+        self.text(tx,513,"登录 Windows 后在后台运行。",11,MUTED)
+        self.toggle(right-76,490,tc.is_autostart_enabled(),self.toggle_boot)
+        c.create_line(tx,554,right-28,554,fill=LINE)
+        self.text(tx,h-106,"关闭窗口收起到托盘；退出将停止后台运行。",10,MUTED)
+        self.button(right-164,h-117,136,37,"退出 PULSE",self.exit_app,fill="#38262E",color=RED)
+
 
     def choose_model(self):
         if self.model_window and self.model_window.winfo_exists():
@@ -295,17 +361,18 @@ class Dashboard:
         win=tk.Toplevel(self.root)
         self.model_window=win
         win.title("选择卓威鼠标型号")
-        win.geometry("620x410")
+        win.geometry(f"620x430+{self.root.winfo_rootx()+max(0,(self.root.winfo_width()-620)//2)}+{self.root.winfo_rooty()+90}")
         win.resizable(False,False)
         win.configure(bg=BG)
         win.transient(self.root)
+        window_theme(win)
         tk.Label(win,text="按实际型号匹配固件规则",bg=BG,fg=INK,
                  font=("Microsoft YaHei UI",17,"bold")).pack(anchor="w",padx=26,pady=(24,12))
         tk.Label(win,text="接收器的 USB 标识和版本号不能区分所有型号。",bg=BG,fg=MUTED,
                  font=("Microsoft YaHei UI",10)).pack(anchor="w",padx=26)
         names=["未选择（仅读电压）"]+list(profiles.PROFILES)
         selected=tk.StringVar(value=names[list(profiles.MODEL_CHOICES).index(self.cfg["zowie_model"])])
-        combo=ttk.Combobox(win,textvariable=selected,values=names,state="readonly",font=("Microsoft YaHei UI",12))
+        combo=ttk.Combobox(win,textvariable=selected,values=names,state="readonly",style="Pulse.TCombobox",font=("Microsoft YaHei UI",12))
         combo.pack(fill="x",padx=26,pady=20)
         info=tk.Label(win,bg=BG,fg=MUTED,justify="left",anchor="nw",wraplength=560,
                       font=("Microsoft YaHei UI",10))
@@ -327,7 +394,7 @@ class Dashboard:
             win.destroy()
             self.draw()
             self.refresh()
-        ttk.Button(win,text="保存并刷新",command=apply).pack(side="bottom",anchor="e",padx=26,pady=22)
+        ttk.Button(win,text="保存并刷新",command=apply,style="Pulse.TButton").pack(side="bottom",anchor="e",padx=26,pady=22)
         update()
 
     def set_interval(self,seconds):
@@ -420,16 +487,23 @@ class Dashboard:
         win=tk.Toplevel(self.root)
         self.details_window=win
         win.title(row.name+" · 连接详情")
-        win.geometry("650x480")
+        win.geometry(f"650x480+{self.root.winfo_rootx()+max(0,(self.root.winfo_width()-650)//2)}+{self.root.winfo_rooty()+90}")
         win.configure(bg=BG)
         win.transient(self.root)
+        window_theme(win)
         tk.Label(win,text=row.name,font=("Microsoft YaHei UI",18,"bold"),
                  bg=BG,fg=INK).pack(anchor="w",padx=25,pady=(22,8))
         tk.Label(win,text=row.message,font=("Microsoft YaHei UI",10),
                  bg=BG,fg=MUTED).pack(anchor="w",padx=25,pady=(0,15))
-        body=scrolledtext.ScrolledText(win,font=("Microsoft YaHei UI",10),wrap="word",
-                                       relief="flat",bg="#FFFFFF",fg=INK,padx=18,pady=15)
-        body.pack(fill="both",expand=True,padx=25,pady=(0,25))
+        frame=tk.Frame(win,bg=SURFACE)
+        frame.pack(fill="both",expand=True,padx=25,pady=(0,25))
+        body=tk.Text(frame,font=("Microsoft YaHei UI",10),wrap="word",
+                     relief="flat",bg=SURFACE,fg=INK,insertbackground=CYAN,
+                     selectbackground="#27555B",padx=18,pady=15)
+        scrollbar=ttk.Scrollbar(frame,orient="vertical",command=body.yview,style="Pulse.Vertical.TScrollbar")
+        scrollbar.pack(side="right",fill="y")
+        body.configure(yscrollcommand=scrollbar.set)
+        body.pack(side="left",fill="both",expand=True)
         lines=[f"设备标识：{row.usb_id}",f"连接方式：{row.connection}",
                f"数据来源：{row.source or '无电量数据'}"]
         if row.firmware:
