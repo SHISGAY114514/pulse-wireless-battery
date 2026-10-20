@@ -66,10 +66,8 @@ HIDP_STATUS_SUCCESS = 0x00110000
 BATTERY_USAGES = [
     (0x0006, 0x0020, "Battery Strength（通用设备控制页）"),
     (0x000D, 0x003B, "Battery Strength（数字化仪页，常见于触控笔）"),
-    (0x0085, 0x0001, "Absolute State of Charge（电池系统页）"),
-    (0x0085, 0x0066, "Relative State of Charge（电池系统页）"),
-    (0x0085, 0x0065, "Battery Level（电池系统页）"),
-    (0x0006, 0x0029, "RF Signal Strength（无线信号强度）"),
+    (0x0085, 0x0064, "Relative State of Charge（电池系统页）"),
+    (0x0085, 0x0065, "Absolute State of Charge（电池系统页）"),
 ]
 
 # Windows 独占（Exclusive）打开的顶层集合：只能以 0 访问权限打开，
@@ -108,6 +106,35 @@ class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
         ("Flags", wintypes.DWORD),
         ("Reserved", ctypes.c_void_p),
     ]
+
+
+class SP_DEVINFO_DATA(ctypes.Structure):
+    _fields_ = [("cbSize",wintypes.DWORD),("ClassGuid",GUID),
+                ("DevInst",wintypes.DWORD),("Reserved",ctypes.c_void_p)]
+
+
+class DEVPROPKEY(ctypes.Structure):
+    _fields_ = [("fmtid",GUID),("pid",wintypes.DWORD)]
+
+
+# Separate function object: bt_battery.py also declares this API with its own
+# ctypes structures. Do not overwrite each other's argument declarations.
+_get_device_property=ctypes.WinDLL("setupapi",use_last_error=True).SetupDiGetDevicePropertyW
+_get_device_property.restype=wintypes.BOOL
+_get_device_property.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,
+    ctypes.c_void_p,ctypes.c_void_p,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD]
+
+
+def _container_group(hdev,info):
+    key=DEVPROPKEY(GUID(0x8C7ED206,0x3F8A,0x4827,
+        (ctypes.c_ubyte*8)(0xB3,0xAB,0xAE,0x9E,0x1F,0xAE,0xFC,0x6C)),2)
+    kind=wintypes.ULONG()
+    size=wintypes.DWORD()
+    value=ctypes.create_string_buffer(16)
+    if (_get_device_property(hdev,ctypes.byref(info),ctypes.byref(key),ctypes.byref(kind),
+            value,16,ctypes.byref(size),0) and kind.value==0xD and size.value==16 and any(value.raw)):
+        return 'container:'+value.raw.hex()
+    return ''
 
 
 class SP_DEVICE_INTERFACE_DETAIL_DATA_W(ctypes.Structure):
@@ -306,6 +333,8 @@ hid.HidP_GetUsageValue.argtypes = [
 ]
 hid.HidD_GetFeature.restype = wintypes.BOOL
 hid.HidD_GetFeature.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.ULONG]
+hid.HidD_GetInputReport.restype = wintypes.BOOL
+hid.HidD_GetInputReport.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.ULONG]
 hid.HidD_SetFeature.restype = wintypes.BOOL
 hid.HidD_SetFeature.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.ULONG]
 hid.HidD_SetOutputReport.restype = wintypes.BOOL
@@ -472,9 +501,11 @@ def enumerate_hid() -> list[HidInterface]:
             if not need.value:
                 continue
             buf = ctypes.create_string_buffer(need.value)
+            info=SP_DEVINFO_DATA()
+            info.cbSize=ctypes.sizeof(info)
             ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))[0] = 8  # cbSize
             if not setupapi.SetupDiGetDeviceInterfaceDetailW(
-                hdev, ctypes.byref(iface), buf, need.value, None, None
+                hdev, ctypes.byref(iface), buf, need.value, None, ctypes.byref(info)
             ):
                 continue
             path = ctypes.cast(
@@ -484,7 +515,11 @@ def enumerate_hid() -> list[HidInterface]:
                 continue
 
             item = _probe_interface(path)
-            item.group = physical_group_key(path)
+            item.group = _container_group(hdev,info)
+            if not item.group:
+                item.group = physical_group_key(path)
+                if item.serial:
+                    item.group += ':' + item.serial
             result.append(item)
     finally:
         setupapi.SetupDiDestroyDeviceInfoList(hdev)
@@ -657,8 +692,20 @@ class HidDevice:
                            f"(err={ctypes.get_last_error()})")
         return buf.raw
 
-    def set_feature_report(self, data: bytes) -> None:
-        if not self.write_access:
+    def get_input_report(self, report_id: int, length: Optional[int] = None) -> bytes:
+        """Read a specifically declared Input Report through a zero-access handle."""
+        length = length or self.caps.InputReportByteLength
+        if not length:raise HidError("此接口没有 Input Report")
+        buf=ctypes.create_string_buffer(length)
+        buf[0]=bytes([report_id & 0xff])
+        if not hid.HidD_GetInputReport(self.handle,buf,length):
+            raise HidError(f"读 Input Report 失败 (err={ctypes.get_last_error()})")
+        return buf.raw
+
+    def set_feature_report(self, data: bytes, *, allow_zero_access: bool = False) -> None:
+        # Windows permits feature IOCTLs on a zero-access handle even when its
+        # mouse collection is exclusive. Only explicit protocol readers opt in.
+        if not self.write_access and not allow_zero_access:
             raise HidError("当前句柄没有写权限，无法发送 Feature Report")
         buf = ctypes.create_string_buffer(bytes(data), len(data))
         if not hid.HidD_SetFeature(self.handle, buf, len(data)):
@@ -763,12 +810,12 @@ class HidDevice:
                 return
 
     # -- usage 取值 ----------------------------------------------------
-    def usage_value(self, report_type: int, report: bytes, caps: HIDP_VALUE_CAPS) -> Optional[int]:
+    def usage_value(self, report_type: int, report: bytes, caps: HIDP_VALUE_CAPS, usage: Optional[int] = None) -> Optional[int]:
         """按能力表定义，从原始报文里取出该字段的数值。"""
         if not self._preparsed:
             return None
         value = wintypes.ULONG(0)
-        usage = caps.u.NotRange.Usage
+        usage = caps.u.NotRange.Usage if usage is None else usage
         status = hid.HidP_GetUsageValue(
             report_type, caps.UsagePage, caps.LinkCollection, usage,
             ctypes.byref(value), self._preparsed,

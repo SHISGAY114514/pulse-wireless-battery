@@ -36,7 +36,7 @@ process=subprocess.Popen(command+["--background"],env=env)
 results=[]
 try:
     wait_for(lambda s:s["running"] and s["tray_ready"] and not s["panel_visible"],"后台启动")
-    results.append("后台启动：无面板，两个托盘图标已创建")
+    results.append("后台启动：无面板，动态设备托盘已就绪")
     hwnd=tc.tray_hwnd()
     for index in range(3):
         # Exactly the callback Windows sends for clicking either notification icon.

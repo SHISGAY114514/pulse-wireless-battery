@@ -35,6 +35,10 @@ class Reading:
     checked_at: float = 0.0
     attempts: list[str] = field(default_factory=list)
     interfaces: list[dict] = field(default_factory=list)
+    kind: str = "device"
+    protocol: str = ""
+    raw_level: Optional[int] = None
+    present: bool = True
 
     def to_dict(self):
         return asdict(self)
@@ -44,9 +48,13 @@ def interface_info(iface):
             "input": iface.input_len, "output": iface.output_len,
             "feature": iface.feature_len}
 
-def initial_readings():
+def _known_templates():
     return [Reading("mouse", "ZOWIE 无线鼠标", "无线游戏鼠标", "04A5:800A"),
             Reading("headset", "漫步者 G5 MAX", "无线游戏耳机", "35BB:A00B")]
+
+
+def initial_readings():
+    return []
 
 def standard_read(row, interfaces):
     for iface in interfaces:
@@ -56,7 +64,7 @@ def standard_read(row, interfaces):
             row.source, row.message = result.source, "已读取电量"
             return True
         # Only matching built-in protocols are attempted; unknown vendor writes are excluded.
-        result = battery.strategy_vendor_protocol(iface)
+        result = battery.strategy_vendor_protocol(iface, include_user=False)
         if result and result.ok and result.level is not None:
             row.level, row.online = result.level, True
             row.source, row.message = result.source, "已读取电量"
@@ -67,7 +75,8 @@ def read_mouse(interfaces, model=None):
     global _mouse_display_band, _mouse_context
     model = tc.load_config()["zowie_model"] if model is None else model
     profile = profiles.get_profile(model)
-    row = initial_readings()[0]
+    row = _known_templates()[0]
+    row.kind, row.protocol = 'mouse', 'zowie'
     row.model = model
     row.name = "ZOWIE " + profile.model if profile else "ZOWIE 无线鼠标"
     row.verification = profile.evidence if profile else "待选择型号；共享接收器无法识别具体型号"
@@ -146,7 +155,8 @@ def read_mouse(interfaces, model=None):
 
 
 def read_headset(interfaces):
-    row = initial_readings()[1]
+    row = _known_templates()[1]
+    row.kind, row.protocol = 'headset', 'edifier'
     matches = [d for d in interfaces if d.vid == 0x35BB and d.pid in (0xA00B, 0xA211)]
     row.receiver = any(d.pid == 0xA00B for d in matches)
     row.interfaces = [interface_info(d) for d in matches]
@@ -189,21 +199,9 @@ def read_all():
     try:
         interfaces = hw.enumerate_hid()
     except Exception as exc:
-        _mouse_display_band=''
-        rows = initial_readings()
-        for row in rows:
-            row.message = "设备扫描失败"
-            row.attempts = [str(exc)]
-            row.checked_at = time.time()
-        return rows
-    rows = []
-    for function in (read_mouse, read_headset):
-        try:
-            row = function(interfaces)
-        except Exception as exc:
-            row = initial_readings()[len(rows)]
-            row.message = "设备读取出现异常"
-            row.attempts = [str(exc)]
-        row.checked_at = time.time()
-        rows.append(row)
-    return rows
+        _mouse_display_band = ''
+        row = Reading('scan-error', '设备扫描失败', '系统状态', '', present=False,
+                      message=str(exc), checked_at=time.time())
+        return [row]
+    from device_discovery import read_devices
+    return read_devices(interfaces)

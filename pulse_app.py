@@ -8,7 +8,7 @@ import tray_common as tc
 from zowie_profiles import MODEL_CHOICES, PROFILES
 
 def main():
-    parser=argparse.ArgumentParser(description="PULSE · 卓威 / 漫步者设备电量")
+    parser=argparse.ArgumentParser(description="PULSE · 无线设备电量")
     parser.add_argument("--once",action="store_true",help="读取一次并退出")
     parser.add_argument("--zowie-model",choices=MODEL_CHOICES,help="保存实际卓威型号；auto 仅读电压")
     parser.add_argument("--list-zowie-models",action="store_true",help="列出型号与验证范围")

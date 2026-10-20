@@ -5,7 +5,7 @@
 ![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 [![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威多系列无线鼠标按对应固件的电量灯映射显示电压及高中低档**。采用深色电竞界面，支持后台常驻、系统托盘和可选的开机自启动。
+一个轻量的 Windows 外设电量面板：**动态发现雷蛇、卓威、漫步者及支持标准 HID 电池字段的设备**，按设备协议显示百分比或电压档位。采用深色电竞界面，支持热插拔、动态托盘和可选的开机自启动。[协议支持范围](docs/DEVICE_SUPPORT.md)明确区分实测、实验性适配与暂不支持的设备。
 
 **原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
 
@@ -16,16 +16,18 @@
 | 来源 | 对本项目的贡献 |
 |---|---|
 | [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer) · 原项目 | Windows HID 访问、原版电量读取与设备调试工具、托盘及系统集成基础、原有 ATK / DARKRIM 协议实现 |
-| PULSE · 本仓库 | 新版圆角面板、同进程面板与托盘常驻、托盘恢复及单实例处理、G5 MAX 适配、EC2-DW 电压和档位显示、协议与状态测试 |
+| PULSE · 本仓库 | 新版面板、同进程托盘常驻、单实例与自启动、动态设备发现、G5 MAX / 卓威 / 雷蛇适配、标准 HID 电量读取及相关测试 |
 | [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor) · 协议研究参考 | DW 接收器只读查询、电压缓存行为与分档研究方法 |
 | [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery) · 协议研究参考 | EC-CW 电量查询的调查线索与型号差异参考 |
+| [openrazer/openrazer](https://github.com/openrazer/openrazer) · 协议研究参考 | 雷蛇型号 USB ID、报文结构及电量 / 充电只读查询 |
 
-后两项为研究参考，协议模块独立实现；未复制其运行代码或校准数据。PULSE 分别分析 EC-DW、FK、ZA13、S2、U2DW、早期 U2 固件，区分实机验证和离线验证，详见[卓威支持矩阵与证据](docs/ZOWIE_SUPPORT.md)。完整来源说明、基线提交和授权信息见 [参考项目与来源](docs/REFERENCES.md)及 [NOTICE](NOTICE.md)。[原项目 README](docs/UPSTREAM_README.md)作为原文保留。
+后三项为研究参考，协议模块独立实现；未复制其运行代码或校准数据。PULSE 分别分析 EC-DW、FK、ZA13、S2、U2DW、早期 U2 固件，区分实机验证和离线验证，详见[卓威支持矩阵与证据](docs/ZOWIE_SUPPORT.md)。完整来源说明、基线提交和授权信息见 [参考项目与来源](docs/REFERENCES.md)及 [NOTICE](NOTICE.md)。[原项目 README](docs/UPSTREAM_README.md)作为原文保留。
 
 ## 功能概览
 
 - 深色切角卡片、细线网格、青色与荧光黄点缀；设备插画由原生 Canvas 绘制，无额外图片依赖。
 - 一处查看鼠标和耳机状态，手动刷新或按设定间隔自动查询。
+- 按 Windows 物理设备合并 HID 集合，卡片、计数和托盘随设备增删；三张卡片同屏，更多设备分页。
 - 关闭面板后继续在后台运行，点击托盘可恢复已有窗口。
 - 支持开机自启动、单实例启动和彻底退出。
 - 无法读取或设备断开时显示不可用，保留电压缓存与百分比的来源区别。
@@ -35,6 +37,8 @@
 
 | 设备 | 接口 | 显示内容 | 验证范围 |
 |---|---|---|---|
+| 雷蛇 DeathAdder V3 Pro | `1532:00B7` 2.4G 接收器 | 电量百分比、充电状态 | 已实机读取；同协议其他已收录 PID 尚未逐型号实测 |
+| 标准 HID 电池设备 | 描述符声明的 Feature / Input 电池字段 | 按逻辑范围读取电量百分比 | 通用读取路径，设备仍须实际提供对应字段 |
 | 漫步者 / HECATE G5 MAX | `35BB:A00B` 2.4G 接收器 | 设备返回的百分比、充电状态 | 已实机验证纯 2.4G 读取 |
 | 漫步者 / HECATE G5 MAX | `35BB:A211` USB 有线 | 设备返回的百分比、充电状态 | 已实机验证，界面区分有线连接 |
 | 卓威 ZOWIE EC2-DW | `04A5:800A` 2.4G 接收器 | 接收器缓存电压及高/中/低档 | 接收器固件 `8511`、实机鼠标固件 `2524` |
@@ -44,7 +48,7 @@
 | FK1-DW、ZA12-DW | `04A5:800A` | 仅读取电压，不显示档位 | 缺少对应型号固件 |
 | EC1/2/3-CW | `04A5:8006` | 实验性电压查询，不显示档位 | Windows 未实机验证，缺少固件映射 |
 
-**尚未覆盖所有近年卓威无线型号。** U2 原装 `8008` 接收器暂不读取；未知固件不显示档位。接收器 `8507` 已离线核对，只有 `8511` 在本机实测。卓威未取得已验证的原生百分比，不能把高档当成准确容量或充满信号。原项目的 ATK / DARKRIM 调试逻辑保留在源码中，不属于本面板已验证的默认设备。
+**尚未覆盖所有私有电量协议，也未覆盖所有近年卓威无线型号。** U2 原装 `8008` 接收器暂不读取；未知固件不显示档位。接收器 `8507` 已离线核对，只有 `8511` 在本机实测。卓威未取得已验证的原生百分比，不能把高档当成准确容量或充满信号。原项目的部分厂商适配器作为实验性路径接入，具体见[协议支持说明](docs/DEVICE_SUPPORT.md)。
 
 **首次使用请到“偏好设置 → 卓威鼠标型号”选择实际型号。** DW 共用接收器 USB ID，无法据此自动识别；新安装默认仅读电压。完整型号、版本、阈值和缺口见[支持矩阵](docs/ZOWIE_SUPPORT.md)。
 
@@ -69,7 +73,7 @@ python pulse_app.py
 - 右键托盘可打开面板、刷新、切换开机自启动或彻底退出。
 - 在偏好设置中调整自动刷新及间隔，自启动默认关闭。
 - 设置保存在 `%LOCALAPPDATA%/PULSE/settings.json`，自启动使用 Windows 启动文件夹快捷方式。
-- 鼠标托盘为绿 H / 黄 M / 红 L；耳机为设备返回的电量数字。悬停可见中文说明。
+- 卓威档位托盘为绿 H / 黄 M / 红 L；支持百分比的鼠标、耳机及其他外设显示电量数字。悬停可见中文说明。
 - `Ctrl+R` 刷新，`Ctrl+,` 打开偏好设置。
 
 ## 卓威档位与更新时间
@@ -114,7 +118,7 @@ python pulse_app.py --quit
 不依赖已连接设备的协议、异常、档位及状态测试：
 
 ```powershell
-python -m unittest -v test_devices test_zowie_models
+python -m unittest -v test_devices test_zowie_models test_discovery
 ```
 
 有接收器且耳机、鼠标可读时，退出已有 PULSE 后，可做常驻生命周期验收：
@@ -140,6 +144,8 @@ python test_resident_lifecycle.py dist/PULSE.exe
 |---|---|
 | `pulse_app.py` | GUI / CLI 入口 |
 | `modern_ui.py` | 深色电竞桌面面板及设置、详情弹窗 |
+| `device_discovery.py` | 物理设备发现、去重及电量适配器分派 |
+| `razer_proto.py` | 雷蛇电量与充电状态只读协议 |
 | `zowie_profiles.py` | 按型号、固件区分的电量灯映射及验证范围 |
 | `resident_app.py` | 单实例、后台常驻及原生托盘线程 |
 | `device_service.py` | 面板、托盘与命令行共享的设备读取 |
@@ -164,5 +170,6 @@ python test_resident_lifecycle.py dist/PULSE.exe
 - [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)：原项目与 Windows HID 基础。
 - [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery)：EC-CW 协议研究参考。
 - [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor)：DW 只读电压协议及缓存研究参考。
+- [openrazer/openrazer](https://github.com/openrazer/openrazer)：雷蛇报文及电量查询协议参考。
 
 本项目为非官方工具，设备名称及商标归各自权利人所有。来源与授权说明见 [NOTICE](NOTICE.md)。

@@ -330,7 +330,9 @@ def _parse_spec_response(spec: ProtocolSpec, report: bytes, iface: HidInterface,
     if spec.level_max is not None and raw_level > spec.level_max:
         return BatteryResult(ok=False, source=spec.name,
                              detail=f"电量字节 0x{raw_level:02X} 超出预期范围", raw=report)
-    level = max(0, min(100, raw_level * spec.scale))
+    level = raw_level * spec.scale
+    if not 0 <= level <= 100:
+        return BatteryResult(ok=False,source=spec.name,detail="电量值超出百分比范围",raw=report)
 
     status = "unknown"
     if spec.charging_offset is not None and len(report) > spec.charging_offset:
@@ -355,8 +357,8 @@ def _parse_spec_response(spec: ProtocolSpec, report: bytes, iface: HidInterface,
     )
 
 
-def strategy_vendor_protocol(iface: HidInterface) -> Optional[BatteryResult]:
-    specs = [s for s in all_protocols()
+def strategy_vendor_protocol(iface: HidInterface, *, include_user: bool = True) -> Optional[BatteryResult]:
+    specs = [s for s in (all_protocols() if include_user else BUILTIN_PROTOCOLS)
              if s.vid == iface.vid and s.usage_page == iface.usage_page]
     if not specs:
         return None

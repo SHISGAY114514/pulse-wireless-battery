@@ -35,6 +35,7 @@ DEFAULT_CONFIG = {
     "autostart": False,    # Only enable startup when explicitly selected in settings.
     "auto_refresh": True,
     "zowie_model": "auto", # Shared receiver IDs cannot identify the paired model.
+    "zowie_models": {},   # Optional per-physical-device overrides, keyed by hash.
 }
 
 INTERVAL_CHOICES = [(30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"),
@@ -81,6 +82,10 @@ def load_config() -> dict:
     from zowie_profiles import MODEL_CHOICES
     if not isinstance(cfg["zowie_model"], str) or cfg["zowie_model"] not in MODEL_CHOICES:
         cfg["zowie_model"] = "auto"
+    overrides=cfg.get('zowie_models')
+    cfg['zowie_models']={k:v for k,v in overrides.items() if isinstance(k,str) and len(k)==20
+                        and all(c in '0123456789abcdef' for c in k)
+                        and isinstance(v,str) and v in MODEL_CHOICES} if isinstance(overrides,dict) else {}
     return cfg
 
 

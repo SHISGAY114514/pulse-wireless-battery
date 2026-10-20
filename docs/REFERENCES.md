@@ -18,7 +18,15 @@ PULSE 基于该项目修改，并在 GitHub 上保留 Fork 关系和上游提交
 
 PULSE 对部分基础文件作了修改。当前的 `my_devices.py` 为新入口；原版内容可在基线提交中查阅。新版面板、常驻协调及设备适配等新增部分见 `modern_ui.py`、`resident_app.py`、`device_service.py`、`edifier_proto.py`、`zowie_proto.py` 和相关测试。
 
-原项目最初适配 ATK / DARKRIM。本项目面板适配 G5 MAX 与卓威多系列无线鼠标，不能把上游设备验证范围与本项目新增适配混为一谈。
+原项目最初适配 ATK / DARKRIM。本项目面板扩展 G5 MAX、卓威多系列无线鼠标、雷蛇及标准 HID 电池字段，不能把上游设备验证范围与本项目新增适配混为一谈。
+
+## 协议研究参考：OpenRazer
+
+- 仓库：[openrazer/openrazer](https://github.com/openrazer/openrazer)
+- 项目声明的许可：GPL-2.0-or-later。
+- 参考文件：[鼠标型号与查询](https://github.com/openrazer/openrazer/blob/master/driver/razermouse_driver.c)、[报文结构](https://github.com/openrazer/openrazer/blob/master/driver/razercommon.h)、[电量命令](https://github.com/openrazer/openrazer/blob/master/driver/razerchromacommon.c)。
+
+参考内容为 VID/PID、90 字节报文布局、事务 ID、XOR 校验和，以及 `07:80 / 07:84` 电量和充电查询等协议事实。PULSE 的 Python 模块 `razer_proto.py` 独立实现，未复制 OpenRazer 的 GPL 运行代码；不包含其内核驱动或设置写入功能。已在本机 DeathAdder V3 Pro `1532:00B7` 接收器验证；其他 PID 的适配边界见[动态设备支持说明](DEVICE_SUPPORT.md)。
 
 ## 协议研究参考：U2-dw-battery-monitor
 

@@ -79,6 +79,9 @@ class Dashboard:
         self.tray_busy=False
         self.details_window=None
         self.model_window=None
+        self.device_page=0
+        self.devices_dirty=False
+        self.discovery_timer=None
         self.closed=False
         self.visible=root.state()!="withdrawn"
         self.c=tk.Canvas(root,bg=BG,highlightthickness=0,bd=0)
@@ -214,30 +217,86 @@ class Dashboard:
         c.create_text(w-32,132,text=f"自动同步 / {self.cfg['interval']} 秒" if self.auto else "自动同步已暂停",
                       anchor="e",fill=MUTED,font=("Microsoft YaHei UI",-11))
         gap=20
-        card_w=(w-32-x-gap)/2
+        pages=max(1,(len(self.rows)+2)//3)
+        self.device_page=min(self.device_page,pages-1)
+        visible=self.rows[self.device_page*3:self.device_page*3+3]
+        columns=max(1,len(visible))
+        card_w=min(480,(w-32-x-gap*(columns-1))/columns)
         card_h=h-282
-        for i,row in enumerate(self.rows):self.draw_card(x+i*(card_w+gap),165,card_w,card_h,row,i)
+        for i,row in enumerate(visible):
+            draw=self.draw_compact_card if columns==3 else self.draw_card
+            draw(x+i*(card_w+gap),165,card_w,card_h,row,self.device_page*3+i)
+        if not visible:
+            cut_panel(c,x,165,w-32-x,card_h,16,fill=SURFACE,outline=LINE)
+            self.text(x+28,199,"尚未发现电量设备",22,INK,"bold")
+            self.text(x+28,244,"插入无线接收器或支持标准 HID 电池字段的外设后，将自动显示。",12,MUTED,width=w-100-x)
         y=h-95
         c.create_line(x,y-10,w-32,y-10,fill=LINE)
         good=sum(r.level is not None or r.voltage is not None for r in self.rows)
         self.text(x,y+4,f"{good:02d}",24,CYAN,"bold",family="Bahnschrift")
         self.text(x+42,y+3,"台设备已同步" if not self.busy else "设备同步中",12,INK,"bold")
         unavailable=[r for r in self.rows if r.receiver and r.level is None and r.voltage is None]
-        hint=unavailable[0].message if unavailable else "鼠标 / 电量档位     耳机 / 电量百分比"
-        self.text(x+42,y+26,hint,10,MUTED)
+        hint=unavailable[0].message if unavailable else f"已发现 {len(self.rows)} 台设备 · 按设备实际协议读取"
+        self.text(x+42,y+26,hint,10,MUTED,width=max(240,w-x-270))
+        if pages>1:
+            self.button(w-210,y+5,36,30,"‹",lambda:self.change_device_page(-1))
+            c.create_text(w-129,y+20,text=f"{self.device_page+1} / {pages}",fill=MUTED,font=("Consolas",-12))
+            self.button(w-68,y+5,36,30,"›",lambda:self.change_device_page(1))
+
+    def change_device_page(self,delta):
+        pages=max(1,(len(self.rows)+2)//3)
+        self.device_page=(self.device_page+delta)%pages
+        self.draw()
+
+    def draw_compact_card(self,x,y,w,h,row,index):
+        c=self.c
+        accent=LIME if row.kind=='mouse' and row.protocol=='zowie' else GREEN if row.protocol=='razer' else CYAN
+        cut_panel(c,x,y,w,h,14,fill=SURFACE,outline=LINE)
+        c.create_line(x+15,y,x+w-15,y,fill=accent,width=2)
+        labels={'mouse':'MOUSE','headset':'HEADSET','keyboard':'KEYBOARD','gamepad':'CONTROLLER'}
+        self.text(x+18,y+20,f"{index+1:02d} / {labels.get(row.kind,'DEVICE')}",9,accent,"bold",family='Consolas')
+        self.text(x+18,y+51,row.name,16,INK,"bold",width=w-36)
+        number=row.display_band or (str(row.level) if row.level is not None else f'{row.voltage:.2f}' if row.voltage is not None else '—')
+        color=BAND_COLORS.get(row.display_band,RED if row.level is not None and row.level<30 else INK)
+        self.text(x+18,y+110,number,38 if row.display_band else 48,color,'bold',
+                  family='Microsoft YaHei UI' if row.display_band else 'Bahnschrift')
+        if row.level is not None:
+            self.text(x+20+len(number)*26,y+139,'%',15,MUTED,family='Bahnschrift')
+        elif row.voltage is not None:
+            self.text(x+20,y+161,f'最近接收 {row.voltage:.2f} V',10,MUTED)
+        self.device_art(x+w/2,y+230,row.kind,accent,scale=.65)
+        note='缓存电压 · 采样时间未知' if row.protocol=='zowie' and row.voltage is not None else '正在充电' if row.charging else '设备直接返回电量' if row.level is not None else row.message
+        self.text(x+18,y+h-149,note,10,MUTED,width=w-36)
+        by=y+h-106
+        if row.display_band:
+            for j,band in enumerate(('低档','中档','高档')):
+                bw=(w-36)/3
+                col=BAND_COLORS[band] if row.display_band==band else MUTED
+                cut_panel(c,x+18+j*bw,by,bw-4,25,4,fill='#253036',outline=col if row.display_band==band else LINE)
+                c.create_text(x+18+(j+.5)*bw-2,by+12,text=band[0],fill=col,font=('Microsoft YaHei UI',-10))
+        else:
+            for j in range(20):
+                bw=(w-36)/20
+                active=row.level is not None and j<round(row.level*20/100)
+                c.create_rectangle(x+18+j*bw,by+8,x+18+(j+1)*bw-3,by+17,fill=(RED if row.level<30 else accent) if active else LINE,outline='')
+        c.create_line(x+18,y+h-53,x+w-18,y+h-53,fill=LINE)
+        self.text(x+18,y+h-38,'2.4G 接收器' if row.receiver else row.connection,9,MUTED)
+        tag=f'detail_{row.key}'
+        self.text(x+w-72,y+h-38,'详情  ↗',10,accent,'bold',tags=tag)
+        self.bind_action(tag,lambda:self.details(row))
 
     def draw_card(self,x,y,w,h,row,index):
         c=self.c
-        accent=LIME if row.key=="mouse" else CYAN
+        accent=LIME if row.protocol=='zowie' else GREEN if row.protocol=='razer' else CYAN
         cut_panel(c,x,y,w,h,16,fill=SURFACE,outline=LINE)
         # Bottom color field is clipped to the card's cut corner.
         for dy in range(0,126,3):
             yy=y+h-126+dy
             end=x+w-max(0,16-(126-dy))
-            c.create_line(x+1,yy,end-1,yy,fill=mix(SURFACE,"#173330" if row.key=="mouse" else "#13383C",dy/150),width=3)
+            c.create_line(x+1,yy,end-1,yy,fill=mix(SURFACE,"#173330" if row.kind=="mouse" else "#13383C",dy/150),width=3)
         cut_panel(c,x,y,w,h,16,fill="",outline=LINE)
         c.create_line(x+17,y,x+w-20,y,fill=accent,width=2)
-        self.text(x+24,y+22,f"0{index+1}  /  "+("MOUSE" if row.key=="mouse" else "HEADSET"),10,accent,"bold",family="Consolas")
+        self.text(x+24,y+22,f"{index+1:02d}  /  "+{'mouse':'MOUSE','headset':'HEADSET','keyboard':'KEYBOARD'}.get(row.kind,'DEVICE'),10,accent,"bold",family="Consolas")
         c.create_text(x+w-24,y+29,text="2.4G" if row.connection=="2.4G 无线" else "USB",anchor="e",
                       fill=MUTED,font=("Consolas",-10))
         # Fit long model names (including Glossy) without clipping at minimum size.
@@ -247,18 +306,19 @@ class Dashboard:
         self.text(x+24,y+59,row.name,size,INK,"bold")
         self.text(x+24,y+94,row.category,11,MUTED)
         art_x,art_y=x+w-104,y+204
-        self.device_art(art_x,art_y,row.key,accent)
-        number=row.display_band or (f"{row.voltage:.2f}" if row.voltage is not None else "—" if row.level is None else str(row.level))
+        self.device_art(art_x,art_y,row.kind,accent)
+        voltage_only=row.voltage is not None and row.level is None
+        number=row.display_band or (str(row.level) if row.level is not None else f"{row.voltage:.2f}" if voltage_only else "—")
         color=BAND_COLORS.get(row.display_band,INK if row.level is None or row.level>=30 else RED)
-        self.text(x+24,y+146,number,47 if row.voltage is not None else 65,color,"bold",
+        self.text(x+24,y+146,number,47 if voltage_only else 65,color,"bold",
                   family="Microsoft YaHei UI" if row.display_band else "Bahnschrift")
         if row.display_band:
             self.text(x+27,y+211,f"最近接收  {row.voltage:.2f} V",12,MUTED)
-        elif row.voltage is not None:
-            self.text(x+142,y+175,"V",18,MUTED,family="Bahnschrift")
         elif row.level is not None:
             self.text(x+26+len(number)*35,y+183,"%",18,MUTED,family="Bahnschrift")
-        label=("缓存电压 · 采样时间未知" if row.voltage is not None else "尚未取得电量" if row.level is None
+        elif voltage_only:
+            self.text(x+142,y+175,"V",18,MUTED,family="Bahnschrift")
+        label=("缓存电压 · 采样时间未知" if row.protocol=='zowie' and voltage_only else "设备电压" if voltage_only else "尚未取得电量" if row.level is None
                else "正在充电" if row.charging else "剩余电量")
         self.text(x+27,y+244,label,10,MUTED)
         by=y+h-107
@@ -272,7 +332,7 @@ class Dashboard:
                           outline=col if selected else "#303941")
                 c.create_text(bx+(bar_w/3-6)/2,by+14,text=band,
                               fill=col if selected else MUTED,font=("Microsoft YaHei UI",-11,"bold" if selected else "normal"))
-        elif row.voltage is not None:
+        elif voltage_only:
             self.text(x+24,by+6,"档位未验证 · 查看详情",11,AMBER)
         else:
             self.text(x+24,by-20,"电量",10,MUTED)
@@ -290,8 +350,9 @@ class Dashboard:
         self.text(x+w-95,y+h-38,"连接详情  ↗",10,accent,"bold",tags=tag)
         self.bind_action(tag,lambda r=row:self.details(r))
 
-    def device_art(self,x,y,kind,accent=CYAN):
+    def device_art(self,x,y,kind,accent=CYAN,scale=1):
         c=self.c
+        previous=c.find_all()[-1] if c.find_all() else 0
         for radius in range(78,35,-7):
             c.create_oval(x-radius,y-radius,x+radius,y+radius,fill=mix(SURFACE,"#20373A",(78-radius)/100),outline="")
         c.create_oval(x-76,y-76,x+76,y+76,outline="#34434A",dash=(2,7))
@@ -306,7 +367,7 @@ class Dashboard:
             rounded(c,x-5,y-36,10,23,4,fill=accent,outline="")
             c.create_line(x-31,y-7,x-31,y+15,fill="#74808A",width=3,capstyle="round")
             c.create_text(x,y+30,text="Z",fill="#B6C4C9",font=("Bahnschrift",-18,"bold"))
-        else:
+        elif kind=='headset':
             c.create_arc(x-44,y-58,x+44,y+44,start=0,extent=180,style="arc",outline="#0D1218",width=17)
             c.create_arc(x-44,y-58,x+44,y+44,start=0,extent=180,style="arc",outline="#69727D",width=2)
             c.create_arc(x-34,y-47,x+34,y+37,start=0,extent=180,style="arc",outline="#35414B",width=6)
@@ -317,6 +378,14 @@ class Dashboard:
                 c.create_line(cx+dx*6,y+5,cx+dx*6,y+30,fill=accent,width=2)
             c.create_line(x-39,y+37,x-28,y+57,x-7,y+57,fill="#899BA6",width=3,smooth=True)
             rounded(c,x-10,y+54,16,6,3,fill=accent,outline="")
+        else:
+            cut_panel(c,x-55,y-28,110,68,8,fill='#202A33',outline='#64717E')
+            for r in range(3):
+                for k in range(8):
+                    c.create_rectangle(x-46+k*12,y-18+r*15,x-38+k*12,y-10+r*15,fill=accent if r==0 else '#4D5C66',outline='')
+        if scale!=1:
+            for item in c.find_all():
+                if item>previous:c.scale(item,x,y,scale,scale)
 
     def toggle(self,x,y,value,callback):
         tag=f"toggle_{len(self.c.find_all())}"
@@ -354,7 +423,7 @@ class Dashboard:
         self.button(right-164,h-117,136,37,"退出 PULSE",self.exit_app,fill="#38262E",color=RED)
 
 
-    def choose_model(self):
+    def choose_model(self,row=None):
         if self.model_window and self.model_window.winfo_exists():
             self.model_window.lift()
             return
@@ -368,10 +437,11 @@ class Dashboard:
         window_theme(win)
         tk.Label(win,text="按实际型号匹配固件规则",bg=BG,fg=INK,
                  font=("Microsoft YaHei UI",17,"bold")).pack(anchor="w",padx=26,pady=(24,12))
-        tk.Label(win,text="接收器的 USB 标识和版本号不能区分所有型号。",bg=BG,fg=MUTED,
+        tk.Label(win,text=(row.name+" · 仅设置此接收器" if row else "单接收器默认型号；多接收器请在各自详情中设置。"),bg=BG,fg=MUTED,
                  font=("Microsoft YaHei UI",10)).pack(anchor="w",padx=26)
         names=["未选择（仅读电压）"]+list(profiles.PROFILES)
-        selected=tk.StringVar(value=names[list(profiles.MODEL_CHOICES).index(self.cfg["zowie_model"])])
+        current=row.model if row else self.cfg['zowie_model']
+        selected=tk.StringVar(value=names[list(profiles.MODEL_CHOICES).index(current)])
         combo=ttk.Combobox(win,textvariable=selected,values=names,state="readonly",style="Pulse.TCombobox",font=("Microsoft YaHei UI",12))
         combo.pack(fill="x",padx=26,pady=20)
         info=tk.Label(win,bg=BG,fg=MUTED,justify="left",anchor="nw",wraplength=560,
@@ -389,7 +459,11 @@ class Dashboard:
             if self.busy:
                 info.configure(text="正在读取设备，请稍后点击保存。")
                 return
-            self.cfg["zowie_model"]=profiles.MODEL_CHOICES[names.index(selected.get())]
+            model=profiles.MODEL_CHOICES[names.index(selected.get())]
+            if row:
+                self.cfg['zowie_models']=dict(self.cfg['zowie_models'])
+                self.cfg['zowie_models'][row.key.split(':',1)[1]]=model
+            else:self.cfg["zowie_model"]=model
             tc.save_config(self.cfg)
             win.destroy()
             self.draw()
@@ -440,6 +514,17 @@ class Dashboard:
                 self.messages.put(("error",str(exc)))
         threading.Thread(target=work,daemon=True).start()
 
+    def devices_changed(self):
+        self.devices_dirty=True
+        if self.discovery_timer:self.root.after_cancel(self.discovery_timer)
+        self.discovery_timer=self.root.after(750,self.refresh_devices)
+
+    def refresh_devices(self):
+        self.discovery_timer=None
+        if self.closed or self.busy:return
+        self.devices_dirty=False
+        self.refresh()
+
     def schedule(self):
         if self.timer:
             self.root.after_cancel(self.timer)
@@ -456,13 +541,16 @@ class Dashboard:
                 if kind=="readings":
                     # A CLI configuration change may race a read already in flight.
                     self.busy=False
-                    if payload[0].model and payload[0].model != self.cfg["zowie_model"]:
+                    zowie_rows=[r for r in payload if r.protocol=='zowie']
+                    if any(r.model and r.model!=self.cfg['zowie_models'].get(r.key.split(':',1)[1],
+                            self.cfg['zowie_model'] if len(zowie_rows)==1 else 'auto') for r in zowie_rows):
                         self.refresh()
                         continue
                     self.rows=payload
                     if self.tray:
                         self.tray.update_readings(payload)
                     self.schedule()
+                    if self.devices_dirty and self.discovery_timer is None:self.refresh_devices()
                 elif kind=="tray":
                     self.tray_busy=False
                     self.notice="托盘已启动" if payload else "托盘启动失败"
@@ -475,7 +563,8 @@ class Dashboard:
                         self.exit_app()
                         return
                     {"show":self.show,"hide":self.close,"refresh":self.refresh,
-                     "autostart":self.toggle_boot,"reload":self.reload_config}[payload]()
+                     "autostart":self.toggle_boot,"reload":self.reload_config,
+                     "devices_changed":self.devices_changed}[payload]()
                 self.draw()
         except queue.Empty:
             pass
@@ -495,6 +584,9 @@ class Dashboard:
                  bg=BG,fg=INK).pack(anchor="w",padx=25,pady=(22,8))
         tk.Label(win,text=row.message,font=("Microsoft YaHei UI",10),
                  bg=BG,fg=MUTED).pack(anchor="w",padx=25,pady=(0,15))
+        if row.protocol=='zowie':
+            ttk.Button(win,text="设置此接收器的鼠标型号",style='Pulse.TButton',
+                       command=lambda:self.choose_model(row)).pack(anchor='w',padx=25,pady=(0,12))
         frame=tk.Frame(win,bg=SURFACE)
         frame.pack(fill="both",expand=True,padx=25,pady=(0,25))
         body=tk.Text(frame,font=("Microsoft YaHei UI",10),wrap="word",
@@ -512,6 +604,10 @@ class Dashboard:
             lines.append("验证范围："+row.verification)
         if row.voltage is not None:
             lines += [f"最近接收电压：{row.voltage:.2f} V", "采样时间未知；不能直接换算为精确电量百分比。"]
+        if row.level is not None:
+            lines.append(f"设备电量：{row.level}%")
+        if row.raw_level is not None:
+            lines.append(f"设备原始电量值：{row.raw_level}")
         if row.display_band:
             lines += ["显示档位："+row.display_band+"（按所选型号固件映射推断）",
                       profiles.policy_text(row.model),
@@ -550,6 +646,8 @@ class Dashboard:
         self.closed=True
         if self.timer:
             self.root.after_cancel(self.timer)
+        if self.discovery_timer:
+            self.root.after_cancel(self.discovery_timer)
         if self.tray:
             self.tray.shutdown()
         self.root.destroy()

@@ -8,6 +8,7 @@ from ctypes import wintypes
 import tray_common as tc
 import tray_app as native
 import win_icon
+import hid_win as hw
 
 U, K = tc.USER32, tc.KERNEL32
 U.CreatePopupMenu.restype = ctypes.c_void_p
@@ -28,6 +29,15 @@ U.SendMessageTimeoutW.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.c_size_
 OPEN, REFRESH, AUTOSTART, EXIT = 1101, 1102, 1103, 1104
 UPDATE_ICONS, STOP_NATIVE = native.WM_APP + 20, native.WM_APP + 21
 
+class DeviceNotificationFilter(ctypes.Structure):
+    _fields_=[('size',wintypes.DWORD),('kind',wintypes.DWORD),('reserved',wintypes.DWORD),
+              ('class_guid',hw.GUID),('name',ctypes.c_wchar*1)]
+
+U.RegisterDeviceNotificationW.restype=ctypes.c_void_p
+U.RegisterDeviceNotificationW.argtypes=[ctypes.c_void_p,ctypes.c_void_p,wintypes.DWORD]
+U.UnregisterDeviceNotification.restype=wintypes.BOOL
+U.UnregisterDeviceNotification.argtypes=[ctypes.c_void_p]
+
 def runtime_status():
     hwnd = tc.tray_hwnd()
     bits = ctypes.c_size_t()
@@ -39,6 +49,11 @@ def runtime_status():
             "panel_visible": bool(bits.value & 2), "tray_ready": bool(bits.value & 4),
             "reading": bool(bits.value & 8), "headset_readable": bool(bits.value & 16),
             "mouse_voltage_readable": bool(bits.value & 64),
+            "razer_readable": bool(bits.value & 128),
+            "device_notifications": bool(bits.value & 256),
+            "device_count": (bits.value >> 16) & 255,
+            "receiver_count": (bits.value >> 24) & 255,
+            "icon_count": (bits.value >> 32) & 255,
             "auto_refresh": bool(bits.value & 32),
             "autostart": tc.is_autostart_enabled(), "config_path": tc.CONFIG_PATH}
 
@@ -49,6 +64,11 @@ class ResidentTray(native.TrayApp):
         self.root = dashboard.root
         self.stopping = False
         self.icon_ids = set()
+        self.icon_entries = [(1, "app", "PULSE", False)]
+        self.device_uids = {}
+        self.next_uid = 2
+        self.pending_rows = ()
+        self.device_notification = None
         self.started = threading.Event()
         self.thread = None
         self.start_error = None
@@ -92,37 +112,74 @@ class ResidentTray(native.TrayApp):
         if not self.hwnd:
             raise OSError(ctypes.get_last_error(), "无法启动 PULSE 托盘")
         self.add_icons()
-        if len(self.icon_ids) != len(native.TRAY_ICONS):
+        if not self.icons_added:
             raise OSError("无法创建完整托盘图标，已停止后台启动")
+        device_filter=DeviceNotificationFilter()
+        device_filter.size=ctypes.sizeof(device_filter)
+        device_filter.kind=5  # DBT_DEVTYP_DEVICEINTERFACE
+        device_filter.class_guid=hw.HID_GUID
+        self.device_notification=U.RegisterDeviceNotificationW(self.hwnd,ctypes.byref(device_filter),0)
         os.makedirs(tc.DATA_DIR,exist_ok=True)
         tc.write_pid()
 
     def add_icons(self):
         self.icon_ids.clear()
-        for uid,key,title,plate in native.TRAY_ICONS:
+        for uid,key,title,plate in self.icon_entries:
+            if key == 'app':
+                self.levels[key] = (None, '尚未发现电量设备；点击打开面板')
             if self._apply_icon(native.NIM_ADD,uid,key,title,plate):
                 self.icon_ids.add(uid)
-        self.icons_added = len(self.icon_ids) == len(native.TRAY_ICONS)
+        self.icons_added = bool(self.icon_ids)
+
+    def remove_icons(self):
+        for uid in list(self.icon_ids):
+            nid=self._nid(uid)
+            nid.uFlags=0
+            native.SHELL32.Shell_NotifyIconW(native.NIM_DELETE,ctypes.byref(nid))
+        self.icon_ids.clear()
+        self.icons_added=False
 
     def update_icons(self):
-        for uid,key,title,plate in native.TRAY_ICONS:
-            action = native.NIM_MODIFY if uid in self.icon_ids else native.NIM_ADD
-            if self._apply_icon(action,uid,key,title,plate):
-                self.icon_ids.add(uid)
-            else:
-                self.icon_ids.discard(uid)
-        self.icons_added = len(self.icon_ids) == len(native.TRAY_ICONS)
+        rows=self.pending_rows
+        entries=[]
+        levels={}
+        voltages={}
+        bands={}
+        for row in rows:
+            if not row.present:continue
+            if row.key not in self.device_uids:
+                self.device_uids[row.key]=self.next_uid
+                self.next_uid+=1
+            uid=self.device_uids[row.key]
+            entries.append((uid,row.key,row.name,row.kind!='mouse' or row.protocol!='zowie'))
+            levels[row.key]=(row.level,row.message)
+            voltages[row.key]=row.voltage
+            bands[row.key]=row.display_band
+        if not entries:
+            entries=[(1,'app','PULSE',False)]
+            levels['app']=(None,'尚未发现电量设备；点击打开面板')
+        desired={e[0] for e in entries}
+        for uid in self.icon_ids-desired:
+            nid=self._nid(uid);nid.uFlags=0
+            native.SHELL32.Shell_NotifyIconW(native.NIM_DELETE,ctypes.byref(nid))
+        self.icon_ids.intersection_update(desired)
+        self.icon_entries=entries
+        self.levels,self.voltages,self.bands=levels,voltages,bands
+        for uid,key,title,plate in entries:
+            action=native.NIM_MODIFY if uid in self.icon_ids else native.NIM_ADD
+            if self._apply_icon(action,uid,key,title,plate):self.icon_ids.add(uid)
+            else:self.icon_ids.discard(uid)
+        self.icons_added=bool(self.icon_ids)
 
     def update_readings(self, rows):
-        self.levels = {r.key:(r.level,r.message) for r in rows}
-        self.voltages = {r.key:r.voltage for r in rows}
-        self.bands = {r.key:r.display_band for r in rows}
-        if self.hwnd:
-            U.PostMessageW(self.hwnd,UPDATE_ICONS,0,0)
+        # Publish an immutable snapshot. The native thread owns icon state;
+        # it never calls Tk and never consumes half-updated dictionaries.
+        self.pending_rows=tuple(rows)
+        if self.hwnd:U.PostMessageW(self.hwnd,UPDATE_ICONS,0,0)
 
     def _apply_icon(self, action, uID, key, title, plate):
         voltage=getattr(self,"voltages",{}).get(key)
-        if voltage is None:
+        if voltage is None or self.levels.get(key,(None,''))[0] is not None:
             return super()._apply_icon(action,uID,key,title,plate)
         nid=self._nid(uID)
         band=getattr(self,"bands",{}).get(key,"")
@@ -171,9 +228,14 @@ class ResidentTray(native.TrayApp):
         if msg == self.messages.get("status"):
             return (1 | (2 if self.dashboard.visible else 0)
                     | (4 if self.icons_added else 0) | (8 if self.dashboard.busy else 0)
-                    | (16 if any(r.key=="headset" and r.level is not None for r in self.dashboard.rows) else 0)
-                    | (64 if any(r.key=="mouse" and r.voltage is not None for r in self.dashboard.rows) else 0)
-                    | (32 if self.dashboard.auto else 0))
+                    | (16 if any(r.protocol=="edifier" and r.level is not None for r in self.dashboard.rows) else 0)
+                    | (64 if any(r.protocol=="zowie" and r.voltage is not None for r in self.dashboard.rows) else 0)
+                    | (128 if any(r.protocol=="razer" and r.level is not None for r in self.dashboard.rows) else 0)
+                    | (256 if self.device_notification else 0)
+                    | (32 if self.dashboard.auto else 0)
+                    | (min(255,sum(r.present for r in self.dashboard.rows)) << 16)
+                    | (min(255,sum(r.receiver for r in self.dashboard.rows)) << 24)
+                    | (min(255,len(self.icon_ids)) << 32))
         if msg == self.messages.get("show"):
             self.open_ui()
         elif msg == self.messages.get("hide"):
@@ -182,6 +244,10 @@ class ResidentTray(native.TrayApp):
             self.refresh_now()
         elif msg in (self.messages.get("exit"),self.msg_quit):
             self.dashboard.messages.put(("action","exit"))
+        elif msg == 0x0219:  # WM_DEVICECHANGE; input remains on the Tk queue.
+            if int(wparam) in (7,0x8000,0x8004):
+                self.dashboard.messages.put(("action","devices_changed"))
+            return 1
         elif msg == native.MSG_TRAY_CALLBACK:
             event = int(lparam) & 0xFFFF
             if event in (native.WM_LBUTTONUP,native.WM_LBUTTONDBLCLK):
@@ -217,6 +283,9 @@ class ResidentTray(native.TrayApp):
             self.thread.join(timeout=4)
 
     def _destroy_native(self):
+        if self.device_notification:
+            U.UnregisterDeviceNotification(self.device_notification)
+            self.device_notification=None
         if self.hwnd:
             self.remove_icons()
             hwnd,self.hwnd = self.hwnd,None

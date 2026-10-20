@@ -2,7 +2,7 @@
 
 PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer) 修改，保留上游 Git 提交、原作者署名和原有源码。原版说明保存在 [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md)。
 
-原项目是 PULSE 的代码基础；另外两个卓威项目属于协议研究参考。具体贡献范围和基线提交见 [参考项目与来源](docs/REFERENCES.md)。
+原项目是 PULSE 的代码基础；卓威研究项目与 OpenRazer 属于协议研究参考。具体贡献范围和基线提交见 [参考项目与来源](docs/REFERENCES.md)。
 
 本仓库维护者为 [SHISGAY114514](https://github.com/SHISGAY114514)。新增工作包括圆角桌面面板、同进程后台常驻与托盘恢复、自启动设置、漫步者 G5 MAX 状态读取、卓威多系列固件电量灯映射与型号设置、可复核的离线研究脚本及相关测试。各型号证据与限制见[支持矩阵](docs/ZOWIE_SUPPORT.md)。
 
@@ -18,5 +18,6 @@ PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/
 
 - [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery)：EC-CW 系列的协议说明；该项目声明 GPL-3.0-or-later。PULSE 没有复制其运行代码或通用电压曲线。
 - [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor)：DW 系列只读电压命令、缓存行为等研究。PULSE 的协议模块独立实现，没有复制其运行代码、校准文件或百分比算法；采用相同的已公开互斥量名称以协调共同使用接口的工具。
+- [openrazer/openrazer](https://github.com/openrazer/openrazer)：雷蛇型号 USB ID、报文结构、电量与充电查询等公开协议事实；该项目声明 GPL-2.0-or-later。PULSE 的 `razer_proto.py` 独立实现，没有复制其 GPL 运行代码。
 
-卓威、ZOWIE、BenQ、漫步者、Edifier、HECATE 等名称和商标归各自权利人所有。本项目为非官方工具。
+卓威、ZOWIE、BenQ、漫步者、Edifier、HECATE、Razer 等名称和商标归各自权利人所有。本项目为非官方工具。
