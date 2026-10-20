@@ -1,0 +1,24 @@
+name: 新设备支持
+description: 提供新鼠标、耳机或接收器的信息与已确认的查询线索。
+title: "[Device] "
+body:
+  - type: input
+    id: model
+    attributes:
+      label: 设备完整型号
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: 连接方式与接口信息
+      description: 2.4G / USB / 蓝牙、VID/PID、固件版本；未知项目可写“未知”，不需要上传设备序列号。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已有资料或验证结果
+      description: 厂商资料、参考开源项目链接或已确认的只读查询与最小脱敏回复。没有协议资料也可说明使用需求。
+    validations:
+      required: true

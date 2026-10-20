@@ -1,0 +1,29 @@
+name: 问题反馈
+description: 报告界面、托盘或已支持设备的读取问题。
+title: "[Bug] "
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境与设备
+      description: Windows / Python 或打包版本，设备型号、连接方式，已知的固件版本。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 从启动程序开始，说明怎样触发问题。
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 实际结果与期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充信息（可选）
+      description: 可提供截图或最小报文。上传前删除用户名、设备序列号、USB 实例路径及其他个人信息；不要上传固件或更新器。

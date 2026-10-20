@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用说明与设备范围
+    url: https://github.com/SHISGAY114514/pulse-wireless-battery#当前支持
+    about: 提交前可先查看设备支持范围与使用方式。
+  - name: 协议、档位与刷新限制
+    url: https://github.com/SHISGAY114514/pulse-wireless-battery/blob/main/docs/PROTOCOLS.md
+    about: 了解缓存电压、原生百分比和估算档位的区别。

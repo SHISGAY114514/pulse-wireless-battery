@@ -1,10 +1,34 @@
 # PULSE · 无线设备电量
 
-Windows 桌面电量面板，支持 **漫步者 G5 MAX 电量百分比**和 **卓威 EC2-DW 电压及高中低档**。圆角界面、后台常驻、系统托盘与可选的开机自启动。
+[![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)
+![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
+[![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer) 修改，保留原作者提交和源码。原项目介绍见 [上游 README](docs/UPSTREAM_README.md)。
+一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威 EC2-DW 显示电压及高中低档**。支持圆角界面、后台常驻、系统托盘和可选的开机自启动。
 
-> 本项目统一采用 [MIT 许可证](LICENSE)，允许修改、商用及再分发，须保留版权和许可声明。维护者已确认取得原作者对原有代码按 MIT 发布的授权，来源及授权记录见 [NOTICE](NOTICE.md)。
+**原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
+
+[快速开始](#快速开始) · [支持设备](#当前支持) · [项目来源](#项目来源与改动) · [协议说明](docs/PROTOCOLS.md) · [参与贡献](CONTRIBUTING.md) · [更新记录](CHANGELOG.md)
+
+## 项目来源与改动
+
+| 来源 | 对本项目的贡献 |
+|---|---|
+| [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer) · 原项目 | Windows HID 访问、原版电量读取与设备调试工具、托盘及系统集成基础、原有 ATK / DARKRIM 协议实现 |
+| PULSE · 本仓库 | 新版圆角面板、同进程面板与托盘常驻、托盘恢复及单实例处理、G5 MAX 适配、EC2-DW 电压和档位显示、协议与状态测试 |
+| [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor) · 协议研究参考 | DW 接收器只读查询、电压缓存行为与分档研究方法 |
+| [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery) · 协议研究参考 | EC-CW 电量查询的调查线索与型号差异参考 |
+
+后两项为研究参考，协议模块独立实现；未复制其运行代码或校准数据。CW、U2-DW 与 EC-DW 的命令或阈值存在差异，PULSE 使用本机验证及 EC-DW 固件分析的结果。完整来源说明、基线提交和授权信息见 [参考项目与来源](docs/REFERENCES.md)及 [NOTICE](NOTICE.md)。[原项目 README](docs/UPSTREAM_README.md)作为原文保留。
+
+## 功能概览
+
+- 一处查看鼠标和耳机状态，手动刷新或按设定间隔自动查询。
+- 关闭面板后继续在后台运行，点击托盘可恢复已有窗口。
+- 支持开机自启动、单实例启动和彻底退出。
+- 无法读取或设备断开时显示不可用，保留电压缓存与百分比的来源区别。
+- 运行时仅使用 Python 标准库和 Windows API。
 
 ## 当前支持
 
@@ -16,7 +40,7 @@ Windows 桌面电量面板，支持 **漫步者 G5 MAX 电量百分比**和 **�
 
 这不是通用外设电量工具。卓威未取得设备原生百分比，不能把电压或高档当成准确容量或充满信号。其他型号、其他固件仍需验证。原项目的 ATK / DARKRIM 调试逻辑保留在源码中，不属于本面板已验证的默认设备。
 
-## 运行
+## 快速开始
 
 Windows 10/11、64 位 Python 3.10+，包含 tkinter；开发验证使用 Python 3.12。运行时只使用 Python 标准库与 Windows 自带 API，无第三方运行依赖。
 
@@ -27,6 +51,8 @@ python pulse_app.py
 ```
 
 不需要安装厂商应用或运行固件更新器。接收器须连接电脑，设备须开机；G5 MAX 无线读取需切到 2.4G 模式。
+
+当前仓库提供源码和打包配置，尚未发布 GitHub Release 安装包。需要独立 EXE 时，可按下方步骤自行打包。
 
 ## 界面和后台
 
@@ -112,7 +138,15 @@ python test_resident_lifecycle.py dist/PULSE.exe
 
 不发布官方固件、更新器、原始抓包、设备清单、个人设置或开发环境依赖。
 
-## 致谢
+## 参与贡献与反馈
+
+欢迎通过 [Issues](https://github.com/SHISGAY114514/pulse-wireless-battery/issues/new/choose) 反馈问题、提出功能建议或提交新设备的支持请求。设备型号、连接方式、VID/PID 与固件版本有助于复现；日志请先移除用户名、序列号和设备实例路径。
+
+贡献流程及验证要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，已知协议限制见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)。
+
+## 许可证与致谢
+
+本项目统一采用 [MIT 许可证](LICENSE)，允许修改、商用及再分发，须保留版权和许可声明。原作者与维护者署名、授权记录及第三方说明见 [NOTICE](NOTICE.md)。
 
 - [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)：原项目与 Windows HID 基础。
 - [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery)：EC-CW 协议研究参考。
