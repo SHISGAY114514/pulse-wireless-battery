@@ -1,288 +1,364 @@
-"""Discover battery peripherals by physical device, then select a read adapter.
+"""Adapter registry and isolated polling sessions for physical peripherals."""
 
-No unknown vendor commands, raw-report sweeps, or generic voltage-to-% curves.
-One composite receiver may expose many HID collections: count it only once.
-"""
-import hashlib
+from __future__ import annotations
+
+import threading
 import time
-from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Callable
+
 import hid_win as hw
-import battery
 import device_service as ds
+import device_adapters as adapters
 import tray_common as tc
 import razer_proto
 import mchose_proto
 import keyboard_proto
 import logitech_proto
-from dataclasses import replace
-
-_zowie_states = {}
-_mchose_last = {}
-
-
-def physical_groups(interfaces):
-    groups=defaultdict(list)
-    for iface in interfaces:
-        group=getattr(iface,'group','')
-        if not group:
-            group=hw.physical_group_key(iface.path)
-            if getattr(iface,'serial',''):group+=':'+iface.serial
-        groups[group].append(iface)
-    return sorted(groups.items())
+import darkrim_proto
+import receiver_protocols
+import aula_proto
+from device_identity import physical_groups, device_key, kind_of as kind_of
+from standard_hid import (
+    battery_fields as battery_fields,
+    report_types as report_types,
+    has_battery_field,
+)
+from device_adapters import standard_status, vendor_candidate
 
 
-def device_key(group):
-    # Stable local identity without exporting a serial or Windows Container ID.
-    return hashlib.sha256(group.encode('utf8')).hexdigest()[:20]
+@dataclass(frozen=True)
+class Adapter:
+    name: str
+    matches: Callable
+    read: Callable
 
 
-def kind_of(interfaces):
-    usages={(d.usage_page,d.usage) for d in interfaces}
-    name=' '.join(getattr(d,'product','') for d in interfaces).lower()
-    if any(token in name for token in ('mouse','鼠标')):return 'mouse','鼠标'
-    if any(token in name for token in ('keyboard','键盘','royal kludge')):return 'keyboard','键盘'
-    if (1,2) in usages and (1,6) in usages:return 'device','键鼠组合接收器'
-    if (1,2) in usages:return 'mouse','鼠标'
-    if (1,6) in usages:return 'keyboard','键盘'
-    if (1,5) in usages or (1,4) in usages:return 'gamepad','游戏控制器'
-    return 'device','无线外设'
+def _zowie(items):
+    return any(d.vid == 0x04A5 and d.pid in (0x8006, 0x8008, 0x800A) for d in items)
 
 
-def battery_fields(cap):
-    for page,usage,_ in hw.BATTERY_USAGES:
-        if page!=cap.UsagePage:continue
-        if getattr(cap,'IsRange',False):
-            if cap.u.Range.UsageMin<=usage<=cap.u.Range.UsageMax:yield usage
-        elif usage==cap.u.NotRange.Usage:yield usage
+def _edifier(items):
+    return any(d.vid == 0x35BB and d.pid in (0xA00B, 0xA211) for d in items)
 
 
-def report_types(iface):
-    if iface.feature_len and getattr(iface,'num_feature_value_caps',0):yield hw.HidP_Feature
-    if iface.input_len and getattr(iface,'num_input_value_caps',0):yield hw.HidP_Input
+def _darkrim(items):
+    return any(
+        d.vid == darkrim_proto.VID
+        and d.usage_page == darkrim_proto.USAGE_PAGE
+        and d.usage == darkrim_proto.USAGE
+        and d.output_len == 65
+        and d.input_len == 65
+        for d in items
+    )
 
 
-def has_battery_field(interfaces):
-    for iface in interfaces:
-        if not list(report_types(iface)):continue
-        try:
-            with hw.HidDevice(iface.path) as dev:
-                for kind in report_types(iface):
-                    if any(list(battery_fields(c)) for c in dev.value_caps(kind)):return True
-        except hw.HidError:pass
-    return False
+def read_zowie(items, group, session, cfg):
+    ident = device_key(group)
+    model = cfg["zowie_models"].get(
+        ident, cfg["zowie_model"] if session.zowie_count == 1 else "auto"
+    )
+    state = session.zowie_states.setdefault(group, ds.ZowieState())
+    # Queue local Zowie workers before taking the public cross-process mutex.
+    with session.zowie_lock:
+        row = ds.read_mouse(items, model, state=state)
+    row.key, row.receiver = "zowie:" + ident, True
+    return [row]
 
 
-def standard_status(interfaces):
-    """Read only declared percentage/strength fields; never treat RF as battery."""
-    for iface in interfaces:
-        if not list(report_types(iface)):continue
-        try:
-            with hw.HidDevice(iface.path) as dev:
-                for kind in report_types(iface):
-                    for cap in dev.value_caps(kind):
-                        for usage in battery_fields(cap):
-                            getter=dev.get_feature_report if kind==hw.HidP_Feature else dev.get_input_report
-                            try:report=getter(cap.ReportID)
-                            except hw.HidError:
-                                if kind!=hw.HidP_Input:continue
-                                # Some keyboard receivers push battery input
-                                # but do not implement HID GET_INPUT_REPORT.
-                                report=None
-                                end=time.monotonic()+.15
-                                while time.monotonic()<end:
-                                    candidate=dev.read_input(timeout_ms=30)
-                                    if candidate and candidate[0]==cap.ReportID:
-                                        report=candidate
-                                        break
-                                if report is None:continue
-                            value=dev.usage_value(kind,report,cap,usage=usage)
-                            low,high=cap.LogicalMin,cap.LogicalMax
-                            if value is None or high<=low or not low<=value<=high:continue
-                            return battery.BatteryResult(True,round((value-low)*100/(high-low)),value,
-                                source='标准 HID 电池字段',detail='按 HID 描述符声明的逻辑范围读取')
-        except hw.HidError:pass
-    return None
+def read_edifier(items, group, session, cfg):
+    row = ds.read_headset(items)
+    row.key = "edifier:" + device_key(group)
+    return [row]
 
 
-def vendor_candidate(interfaces):
-    # Existing upstream adapters remain visible, but successful exchange is
-    # still required before declaring a battery reading.
-    return any(d.vid==s.vid and d.usage_page==s.usage_page
-               for d in interfaces for s in battery.BUILTIN_PROTOCOLS)
-
-
-def is_candidate(interfaces):
-    d=interfaces[0]
-    if d.vid==0x04a5 and any(x.pid in (0x8006,0x8008,0x800a) for x in interfaces):return True
-    if d.vid==0x35bb and any(x.pid in (0xa00b,0xa211) for x in interfaces):return True
-    if d.vid==0x1532 and d.pid in razer_proto.MODELS:return True
-    if mchose_proto.matches(interfaces) or keyboard_proto.detect(interfaces) or logitech_proto.matches(interfaces):return True
-    name=' '.join(getattr(x,'product','') for x in interfaces).lower()
-    if 'virtual' in name:return False
-    if any(word in name for word in ('wireless','receiver','dongle','2.4g','无线','接收器')):return True
-    if any(word in name for word in ('mchose','迈从','dareu','达尔优','royal kludge')):return True
-    return vendor_candidate(interfaces) or has_battery_field(interfaces)
-
-
-def read_generic(interfaces,group):
-    kind,category=kind_of(interfaces)
-    row=ds.Reading('hid:'+device_key(group),hw.pick_device_name(interfaces),category,interfaces[0].vid_pid,
-                   kind=kind,connection='USB / 连接方式未确认')
-    row.interfaces=[ds.interface_info(d) for d in interfaces]
-    result=standard_status(interfaces)
-    if result is None and vendor_candidate(interfaces):
-        row.protocol='upstream-vendor'
-        row.verification='原项目厂商协议适配；未在本机实测此型号'
-        row.connection='USB / 连接方式未确认'
-        for iface in interfaces:
-            try:result=battery.strategy_vendor_protocol(iface,include_user=False)
-            except Exception as exc:
-                row.attempts.append(str(exc));continue
-            if result and result.ok:break
-    if result and result.ok:
-        row.level=result.level
-        row.raw_level=result.raw_level
-        row.charging={'charging':True,'discharging':False,'full':False}.get(result.status)
-        row.voltage=result.voltage_mv/1000 if result.voltage_mv else None
-        row.source=result.source
-        row.message='已读取设备电量' if row.level is not None else '仅读取设备电压'
-        row.attempts.append(result.detail)
-        row.protocol=row.protocol or 'standard-hid'
-    else:
-        row.source='电量协议未适配'
-        row.message='已发现设备，暂不支持读取电量'
-        row.attempts.append('未找到标准电池字段或匹配的已确认协议；没有扫描未知厂商命令')
-        if result:row.attempts.append(result.detail)
-    return row
-
-
-def read_mchose(items,group):
-    d=items[0]
-    receiver=d.pid in (0x1020,0x100a,0x100b)
-    row=ds.Reading('mchose:'+device_key(group),hw.pick_device_name(items),'无线游戏鼠标',d.vid_pid,
-        receiver=receiver,connection='2.4G 无线' if receiver else 'USB 有线',kind='mouse',protocol='mchose',
-        verification='A7 Ultra 有线及 5253:1020 纯无线已实测；其余收录身份为协议适配')
-    row.interfaces=[ds.interface_info(x) for x in items]
+def read_razer(items, group, session, cfg):
+    d = next(d for d in items if d.vid == 0x1532 and d.pid in razer_proto.MODELS)
+    profile = razer_proto.MODELS[d.pid]
+    row = ds.Reading(
+        "razer:" + device_key(group),
+        profile.name,
+        "无线键盘" if profile.kind == "keyboard" else "无线游戏鼠标",
+        d.vid_pid,
+        receiver=profile.receiver,
+        connection="2.4G 无线" if profile.receiver else "USB 有线",
+        kind=profile.kind,
+        protocol="razer",
+        verification="公开协议适配；00B7 已在本机实测",
+    )
     try:
-        status=mchose_proto.read_status(items)
-        row.level,row.raw_level,row.charging=status.level,status.level,status.charging
-        row.firmware=status.firmware
-        row.online=True
-        row.sampled_at=time.time()
-        row.source='迈从设备直接读取'
-        row.message='正在充电' if status.charging else '已读取电量'
-        row.attempts=[f'Feature 11/12，只读状态命令 06；逻辑设备 {status.logical_vid:04X}:{status.logical_pid:04X}',
-                      '鼠标休眠时接收器会返回空身份，不能按 0% 处理']
-        _mchose_last[group]=replace(row,attempts=list(row.attempts))
+        status = razer_proto.read_status(items)
+        row.level, row.charging, row.raw_level = (
+            status.level,
+            status.charging,
+            status.raw,
+        )
+        row.online, row.source = True, "雷蛇设备直接读取"
+        row.message = "正在充电" if status.charging else "已读取电量"
+        row.attempts = status.notes + [
+            "07:80 电量 / 07:84 充电；0–255 按比例转换为百分比"
+        ]
     except hw.HidError as exc:
-        row.source='迈从当前电量不可用'
-        row.message='接收器已连接，鼠标可能休眠；移动后刷新'
-        row.attempts=[str(exc)]
-        last=_mchose_last.get(group)
-        if receiver and last and time.time()-last.sampled_at<=600:
-            row.level,row.sampled_at,row.stale=last.level,last.sampled_at,True
-            row.source='上次成功读取（缓存，非当前电量）'
-            row.message=f'鼠标休眠/未回复 · 上次 {last.level}%，非当前值'
-    return row
+        row.message, row.source = "设备可能休眠或未回复", "雷蛇电量暂不可用"
+        row.attempts.append(str(exc))
+    return [row]
 
 
-def read_keyboard(items,group,profile):
-    row=ds.Reading('keyboard:'+device_key(group),profile.name,'无线键盘',items[0].vid_pid,
-        receiver=profile.receiver,connection=profile.connection,kind='keyboard',protocol='keyboard-'+profile.code,
-        verification=('本机 RK R98 已识别 25A7:FA70 / 258A:00C1；官方 1024 候选固件仅完成离线灯分支验证，实机 1023 电量尚未读到'
-                      if profile.code in ('compx-rk','rk98-wired') else '公开协议适配，未在本机逐型号实测'))
-    row.interfaces=[ds.interface_info(d) for d in items]
+def read_receiver_protocol(items, group, session, cfg):
+    profile = receiver_protocols.detect(items)
+    row = ds.Reading(
+        profile.family + ":" + device_key(group),
+        hw.pick_device_name(items),
+        "无线键盘" if profile.kind == "keyboard" else "无线鼠标",
+        items[0].vid_pid,
+        receiver=profile.receiver,
+        kind=profile.kind,
+        protocol=profile.family,
+        connection="2.4G 无线" if profile.receiver else "USB / 连接方式未确认",
+        verification="公开协议适配；本机未实测此型号",
+        model=profile.name,
+    )
     try:
-        status=keyboard_proto.read_status(items,profile)
-        row.level,row.charging=status.level,status.charging
-        row.online=True
-        row.source='键盘协议直接读取'
-        row.message='正在充电' if status.charging else '已读取键盘电量'
-        row.attempts=[status.note] if status.note else []
+        status = receiver_protocols.read_status(items, profile)
+        row.level, row.charging, row.voltage = (
+            status.level,
+            status.charging,
+            status.voltage,
+        )
+        row.raw_level, row.display_band = status.raw, status.band
+        row.source, row.message = profile.family + " 只读电量协议", "已读取设备电量"
+        if status.band:
+            row.attempts.append("设备只上报 0–4 粗略档位，不换算成精确百分比")
     except hw.HidError as exc:
-        row.message='键盘已发现，暂无法读取电量'
-        row.source='电量未取得'
-        row.attempts=[str(exc)]
-    return row
+        row.message, row.source = "设备已发现，暂无法读取电量", "电量未取得"
+        row.attempts.append(str(exc))
+    return [row]
 
 
-def read_logitech(items,group):
-    d=items[0]
-    physical=device_key(group)
-    receiver=d.pid in logitech_proto.RECEIVERS
-    statuses=logitech_proto.read_status(items)
-    rows=[]
-    for status in statuses:
-        row=ds.Reading('logitech:'+physical+f':{status.slot}',status.name or f'Logitech 外设 · 槽 {status.slot}',
-            {'keyboard':'无线键盘','mouse':'无线鼠标'}.get(status.kind,'无线外设'),d.vid_pid,
-            receiver=receiver,receiver_key=physical,connection='2.4G 无线' if receiver else 'USB / 连接方式未确认',
-            kind=status.kind,protocol='logitech',level=status.level,charging=status.charging,
-            voltage=status.voltage,display_band=status.band,source='Logitech HID++ 只读协议',
-            message='已读取设备电量',verification='HID++ 公开协议适配，未在本机实测',attempts=[status.note])
-        row.interfaces=[ds.interface_info(x) for x in items]
-        rows.append(row)
-    if not rows:
-        rows=[ds.Reading('logitech:'+physical,'Logitech 接收器' if receiver else hw.pick_device_name(items),'无线外设',d.vid_pid,
-            receiver=receiver,receiver_key=physical,protocol='logitech',message='接收器已发现；外设休眠、离线或未提供已适配电池特征',
-            source='暂无电量',connection='2.4G 无线' if receiver else 'USB / 连接方式未确认')]
-    return rows
+def read_darkrim(items, group, session, cfg):
+    from hid_transport import serialized
 
-
-def read_devices(interfaces):
-    rows=[]
-    active_zowie=set()
-    active_mchose=set()
-    cfg=tc.load_config()
-    groups=physical_groups(interfaces)
-    zowie_count=sum(any(x.vid==0x04a5 and x.pid in (0x8006,0x8008,0x800a) for x in items) for _,items in groups)
-    for group,items in groups:
-        if not is_candidate(items):continue
-        ident=device_key(group)
-        d=items[0]
-        try:
-            if d.vid==0x04a5 and any(x.pid in (0x8006,0x8008,0x800a) for x in items):
-                active_zowie.add(group)
-                model=cfg['zowie_models'].get(ident,cfg['zowie_model'] if zowie_count==1 else 'auto')
-                ds._mouse_display_band,ds._mouse_context=_zowie_states.get(group,('',None))
-                row=ds.read_mouse(items,model)
-                row.receiver=True
-                _zowie_states[group]=(ds._mouse_display_band,ds._mouse_context)
-                row.key='zowie:'+ident
-            elif d.vid==0x35bb and any(x.pid in (0xa00b,0xa211) for x in items):
-                row=ds.read_headset(items)
-                row.key='edifier:'+ident
-            elif d.vid==0x1532 and d.pid in razer_proto.MODELS:
-                profile=razer_proto.MODELS[d.pid]
-                row=ds.Reading('razer:'+ident,profile.name,'无线键盘' if profile.kind=='keyboard' else '无线游戏鼠标',d.vid_pid,
-                    receiver=profile.receiver,connection='2.4G 无线' if profile.receiver else 'USB 有线',
-                    kind=profile.kind,protocol='razer',verification='公开协议适配；仅 DeathAdder V3 Pro 00B7 已在本机实测')
-                row.interfaces=[ds.interface_info(x) for x in items]
-                try:
-                    status=razer_proto.read_status(items)
-                    row.level,row.charging,row.raw_level=status.level,status.charging,status.raw
-                    row.online=True
-                    row.source='雷蛇设备直接读取'
-                    row.message='正在充电' if status.charging else '已读取电量'
-                    row.attempts=status.notes+['只读命令 07:80 电量 / 07:84 充电；原始 0–255 按比例转换为百分比']
-                except Exception as exc:
-                    row.source='雷蛇电量暂不可用';row.message='接收器已连接，鼠标可能休眠或未回复'
-                    if profile.kind=='keyboard':row.message='键盘可能休眠或未回复，请唤醒后刷新'
-                    row.attempts.append(str(exc))
-            elif mchose_proto.matches(items):
-                active_mchose.add(group)
-                row=read_mchose(items,group)
-            elif keyboard_proto.detect(items):
-                row=read_keyboard(items,group,keyboard_proto.detect(items))
-            elif logitech_proto.matches(items):
-                expanded=read_logitech(items,group)
-                for item in expanded:item.checked_at=time.time()
-                rows.extend(expanded)
+    row = ds.Reading(
+        "darkrim:" + device_key(group),
+        hw.pick_device_name(items),
+        "无线耳机",
+        items[0].vid_pid,
+        receiver=True,
+        kind="headset",
+        protocol="darkrim",
+        verification="原项目协议适配；本机未实测此型号",
+    )
+    with serialized(items):
+        for iface in items:
+            if not _darkrim([iface]):
                 continue
-            else:row=read_generic(items,group)
+            level, error = darkrim_proto.read_battery_only(iface)
+            if level is not None:
+                row.level, row.source, row.message = (
+                    level,
+                    "DARKRIM TLV 电池字段",
+                    "已读取电量",
+                )
+                return [row]
+            row.attempts.append(error)
+    row.message = "接收器已发现；耳机休眠、未回复或报文无效"
+    return [row]
+
+
+def read_aula(items, group, session, cfg):
+    row = ds.Reading(
+        "aula:" + device_key(group),
+        hw.pick_device_name(items),
+        "无线键盘",
+        items[0].vid_pid,
+        receiver=True,
+        kind="keyboard",
+        protocol="aula",
+        verification="公开 GET_DEVICE_INFO 协议适配；本机未实测",
+    )
+    try:
+        status = aula_proto.read_status(items)
+        row.level, row.charging = status.level, status.charging
+        row.source, row.message = "AULA / AJAZZ 设备信息", "已读取键盘电量"
+    except hw.HidError as exc:
+        row.message = "键盘已发现，暂无法读取电量"
+        row.attempts.append(str(exc))
+    return [row]
+
+
+ADAPTERS = (
+    Adapter("zowie", _zowie, read_zowie),
+    Adapter("edifier", _edifier, read_edifier),
+    Adapter(
+        "razer",
+        lambda items: any(
+            d.vid == 0x1532 and d.pid in razer_proto.MODELS for d in items
+        ),
+        read_razer,
+    ),
+    Adapter(
+        "mchose",
+        mchose_proto.matches,
+        lambda items, group, session, cfg: [
+            adapters.read_mchose(items, group, session.mchose_last)
+        ],
+    ),
+    Adapter(
+        "keyboard",
+        keyboard_proto.detect,
+        lambda items, group, session, cfg: [
+            adapters.read_keyboard(items, group, keyboard_proto.detect(items))
+        ],
+    ),
+    Adapter(
+        "logitech",
+        logitech_proto.matches,
+        lambda items, group, session, cfg: adapters.read_logitech(items, group),
+    ),
+    Adapter("receiver-protocol", receiver_protocols.detect, read_receiver_protocol),
+    Adapter("darkrim", _darkrim, read_darkrim),
+    Adapter("aula", aula_proto.matches, read_aula),
+)
+
+
+def select_adapter(items):
+    return next((adapter for adapter in ADAPTERS if adapter.matches(items)), None)
+
+
+def is_candidate(items):
+    if not items:
+        return False
+    name = " ".join(getattr(d, "product", "") for d in items).lower()
+    if "virtual" in name:
+        return False
+    return bool(
+        select_adapter(items)
+        or vendor_candidate(items)
+        or any(
+            word in name
+            for word in (
+                "wireless",
+                "receiver",
+                "dongle",
+                "2.4g",
+                "无线",
+                "接收器",
+                "mchose",
+                "迈从",
+                "dareu",
+                "达尔优",
+                "royal kludge",
+            )
+        )
+        or has_battery_field(items)
+    )
+
+
+class PollSession:
+    """Owns all mutable state. Independent receivers can poll concurrently.
+
+    A session serializes overlapping scans. Each worker handles one physical
+    receiver; device-specific cross-process mutexes protect query/reply pairs.
+    """
+
+    def __init__(self, workers=4):
+        self.workers = max(1, min(8, workers))
+        self.lock = threading.RLock()
+        self.zowie_lock = threading.Lock()
+        self.zowie_states = {}
+        self.mchose_last = {}
+        self.zowie_count = 0
+
+    def clear(self):
+        with self.lock:
+            self.zowie_states.clear()
+            self.mchose_last.clear()
+
+    def _read_group(self, group, items, cfg):
+        adapter = None
+        try:
+            if not is_candidate(items):
+                return []
+            adapter = select_adapter(items)
+            rows = (
+                adapter.read(items, group, self, cfg)
+                if adapter
+                else [adapters.read_generic(items, group)]
+            )
+            # A failed vendor read may still have a real standard battery field.
+            # Zowie never borrows a generic percentage or another LED policy.
+            if (
+                adapter
+                and adapter.name not in ("zowie", "logitech")
+                and all(r.stale or not r.available for r in rows)
+            ):
+                sample = standard_status(items)
+                if sample:
+                    rows[0].level, rows[0].raw_level = sample.level, sample.raw_level
+                    rows[0].source, rows[0].message = (
+                        sample.source,
+                        "已读取标准 HID 电量",
+                    )
+                    rows[0].attempts.append(sample.detail)
+                    rows[0].stale, rows[0].sampled_at = False, 0
+                    rows[0].online, rows[0].charging = None, None
         except Exception as exc:
-            row=ds.Reading('hid:'+ident,hw.pick_device_name(items),'外设',d.vid_pid,message='读取失败',connection='USB / 连接方式未确认',attempts=[str(exc)])
-        row.checked_at=time.time()
-        rows.append(row)
-    for key in set(_zowie_states)-active_zowie:del _zowie_states[key]
-    for key in set(_mchose_last)-active_mchose:del _mchose_last[key]
-    return sorted(rows,key=lambda r:({'zowie':0,'edifier':1,'razer':2}.get(r.protocol,3),r.name,r.key))
+            rows = [
+                ds.Reading(
+                    (adapter.name if adapter else "hid") + ":" + device_key(group),
+                    hw.pick_device_name(items),
+                    "外设",
+                    items[0].vid_pid,
+                    protocol=adapter.name if adapter else "",
+                    message="读取失败",
+                    connection="USB / 连接方式未确认",
+                    attempts=[str(exc)],
+                )
+            ]
+        now = time.time()
+        for row in rows:
+            row.checked_at = now
+            row.receiver_key = device_key(group) if row.receiver else ""
+            row.interfaces = row.interfaces or [ds.interface_info(d) for d in items]
+        return rows
+
+    def read(self, interfaces):
+        with self.lock:
+            groups = physical_groups(interfaces)
+            active = {group for group, _ in groups}
+            for cache in (self.zowie_states, self.mchose_last):
+                for group in set(cache) - active:
+                    del cache[group]
+            self.zowie_count = sum(_zowie(items) for _, items in groups)
+            cfg = tc.load_config()
+            if len(groups) < 2 or self.workers == 1:
+                batches = [
+                    self._read_group(group, items, cfg) for group, items in groups
+                ]
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=self.workers, thread_name_prefix="PULSE HID"
+                ) as pool:
+                    batches = list(
+                        pool.map(lambda pair: self._read_group(*pair, cfg), groups)
+                    )
+            rows = [row for batch in batches for row in batch]
+            return sorted(
+                rows,
+                key=lambda r: (
+                    {"zowie": 0, "edifier": 1, "razer": 2}.get(r.protocol, 3),
+                    r.name,
+                    r.key,
+                ),
+            )
+
+
+default_session = PollSession()
+# Compatibility aliases for existing integrations; new callers can own a session.
+_zowie_states = default_session.zowie_states
+_mchose_last = default_session.mchose_last
+read_devices = default_session.read
+read_generic = adapters.read_generic
+read_logitech = adapters.read_logitech
+read_keyboard = adapters.read_keyboard

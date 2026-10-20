@@ -122,7 +122,6 @@ def create_shortcut(lnk_path: str, target: str, arguments: str = "",
                                 byref(punk))
     if hr < 0 or not punk:
         return False
-    R = ctypes.c_long
     try:
         v = _vtbl(punk)
         _call(v, 20, [wintypes.LPCWSTR], punk, target)              # SetPath
@@ -169,7 +168,6 @@ def read_shortcut(lnk_path: str) -> dict:
                                 byref(punk))
     if hr < 0 or not punk:
         return {}
-    R = ctypes.c_long
     out: dict = {}
     try:
         v = _vtbl(punk)

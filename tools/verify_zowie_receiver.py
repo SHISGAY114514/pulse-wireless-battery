@@ -9,7 +9,7 @@ from pathlib import Path
 import struct
 import sys
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_CODE
-from unicorn.arm_const import *
+from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP
 
 if len(sys.argv) != 2:
     raise SystemExit('Provide an extracted receiver firmware image.')

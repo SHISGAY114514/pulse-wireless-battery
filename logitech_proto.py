@@ -7,7 +7,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 import time
 import hid_win as hw
-from zowie_proto import serialized
+from hid_transport import serialized
 
 RECEIVERS={p:6 for p in (0xc52b,0xc532,0xc548)}
 RECEIVERS.update({p:1 for p in (0xc518,0xc51a,0xc51b,0xc521,0xc525,0xc526,
@@ -153,12 +153,13 @@ def read_status(items):
     if not writers or not inputs:raise hw.HidError('未找到 HID++ 厂商收发集合')
     pid=endpoints[0].pid
     slots=range(1,RECEIVERS[pid]+1) if pid in RECEIVERS else (0xff,)
-    with serialized(),ExitStack() as stack:
+    with serialized(items),ExitStack() as stack:
         writer=None
         for endpoint in writers:
             try:
                 candidate=stack.enter_context(hw.HidDevice(endpoint.path,write=True))
-                if any(c.ReportID==0x10 for c in candidate.value_caps(hw.HidP_Output)):
+                caps = candidate.value_caps(hw.HidP_Output) + candidate.button_caps(hw.HidP_Output)
+                if any(c.ReportID==0x10 for c in caps):
                     writer=candidate
                     output_len=endpoint.output_len
                     break
@@ -169,11 +170,15 @@ def read_status(items):
             try:readers.append(stack.enter_context(hw.HidDevice(endpoint.path)))
             except hw.HidError:continue
         if not readers:raise hw.HidError('HID++ 输入集合不可读')
-        channel=Channel(writer,readers,time.monotonic()+5,output_len)
+        channel=Channel(writer,readers,time.monotonic()+2,output_len)
         results=[]
         for slot in slots:
+            # Every slot gets a budget, even when earlier paired devices sleep.
+            channel.deadline=time.monotonic()+2
             status=channel.battery(slot)
             if status:
-                status.name,status.kind=channel.name(slot)
                 results.append(status)
+        for status in results:
+            channel.deadline=time.monotonic()+.8
+            status.name,status.kind=channel.name(status.slot)
         return results

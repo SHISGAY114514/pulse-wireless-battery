@@ -142,6 +142,8 @@ class StandardBatteryTests(unittest.TestCase):
             cap=NS(UsagePage=6,IsRange=False,u=NS(NotRange=NS(Usage=0x20)),ReportID=3,LogicalMin=10,LogicalMax=110)
             device=MagicMock();device.__enter__.return_value=device
             device.value_caps.return_value=[cap];device.usage_value.return_value=60
+            device.get_feature_report.return_value=b'\x03\x3c'
+            device.get_input_report.return_value=b'\x03\x3c'
             with patch.object(hw,'HidDevice',return_value=device):result=dd.standard_status([f])
             self.assertEqual(result.level,50)
             self.assertEqual(result.raw_level,60)

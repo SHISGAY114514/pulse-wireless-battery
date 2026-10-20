@@ -23,3 +23,6 @@ PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/
 卓威、ZOWIE、BenQ、漫步者、Edifier、HECATE、Razer 等名称和商标归各自权利人所有。本项目为非官方工具。
 
 本轮还参考 alexfrih/mchose-linux、JKWTCN/BatteryMonitor、arutkowski00/mchose-hid-bridge、seerge/g-helper、pwr-Solaar/Solaar 的公开协议事实；RK 固件研究参考 thebabush/nuphy-air75-reversing、shubh-3011/rk-keyboard-software-research 和 rnayabed/rangoli 的研究线索。PULSE 独立实现协议与离线验证脚本，不复制这些项目的运行代码，不将第三方代码改标为 MIT。来源链接和范围见 [键盘支持说明](docs/KEYBOARD_SUPPORT.md)及 [RK 研究报告](docs/RK_R98_RESEARCH.md)。官方固件与更新器不随仓库分发。
+
+
+v1.0.0 新增 ASUS 鼠标、VGN MouseEnc / Weisheng、AULA / AJAZZ 协议实现参考 BatteryMonitor 与 G-Helper 的协议事实，具体固定提交及字段见 docs/PROTOCOLS.md。新模块为独立 Python 实现，没有复制参考项目运行代码；第三方项目代码仍按各自许可证分发。

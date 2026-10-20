@@ -4,7 +4,7 @@ Optional dependency: pip install -r requirements-research.txt
 Usage: python tools/verify_zowie_firmware.py path/to/extracted.bin
 Firmware binaries are deliberately not distributed with PULSE.
 """
-import sys,json,struct,hashlib
+import sys,json,hashlib
 from pathlib import Path
 if len(sys.argv) != 2:
     raise SystemExit('Usage: python tools/verify_zowie_firmware.py extracted.bin')
@@ -17,7 +17,7 @@ if known is None:
     raise SystemExit('Unknown firmware hash. Analyze its layout before executing it.')
 version=known['mouse_image_version']
 from unicorn import Uc,UC_ARCH_ARM,UC_MODE_THUMB,UC_MODE_MCLASS,UC_HOOK_CODE
-from unicorn.arm_const import *
+from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_SP
 
 u=Uc(UC_ARCH_ARM,UC_MODE_THUMB|UC_MODE_MCLASS)
 u.mem_map(0,0x20000); u.mem_write(0x1000,blob)

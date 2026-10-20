@@ -41,6 +41,7 @@ GLYPH_W, GLYPH_H = 3, 5
 def render_rgba(text: str, size: int, color: tuple[int, int, int],
                 plate: bool = False, plate_color=(28, 30, 34, 235)) -> bytes:
     """把文字渲染成 size×size 的 RGBA 像素（返回 size*size*4 字节，行优先）。"""
+    text = text.replace("—", "-")
     n = len(text)
     # 选一个能放下的最大缩放倍数
     gap = 1
@@ -164,8 +165,7 @@ _tmp_dir: Optional[str] = None
 def _ensure_tmp() -> str:
     global _tmp_dir
     if _tmp_dir is None:
-        _tmp_dir = os.path.join(tempfile.gettempdir(), "device_battery_icons")
-        os.makedirs(_tmp_dir, exist_ok=True)
+        _tmp_dir = tempfile.mkdtemp(prefix="pulse-icons-")
     return _tmp_dir
 
 

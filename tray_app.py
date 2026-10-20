@@ -29,7 +29,6 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
-import os
 import sys
 import threading
 import time
@@ -38,8 +37,6 @@ from ctypes import wintypes
 from typing import Optional
 
 import hid_win as hw
-import battery as bt
-import darkrim_proto as drp
 import win_icon
 import tray_common as tc
 import device_service

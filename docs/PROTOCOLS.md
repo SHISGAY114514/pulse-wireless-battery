@@ -60,3 +60,17 @@ PULSE 的高/中/低是应用的保守显示规则，不是设备直接返回的
 本轮迈从与多品牌键盘 / HID++ 适配见[键盘及新增外设说明](KEYBOARD_SUPPORT.md)；RK R98 的候选固件、步数解包、灯分支与尚未完成的电压标定见[专项研究报告](RK_R98_RESEARCH.md)。该 RK 内部无线状态包不是已确认的 USB 查询协议，不用于生成推测电量。
 
 本仓库只提供应用源码、测试中的最小报文示例与协议说明。官方更新器、提取固件、设备枚举文件、序列号、原始抓包、个人设置和调试工具不随源码或便携发布包分发。
+
+
+## v1.0.0 新增协议路径
+
+以下偏移除特别说明外均从去掉 Windows 报告 ID 的 payload 开始计算。
+
+| 协议 | 请求与响应约束 | 电量 |
+|---|---|---|
+| ASUS 鼠标 | 明确 PID / MI 接口，65 字节，报告 00；只发送 `12 07`，回复必须匹配 | payload[4]，Strix Carry 使用 [6]；新设备 0–100，旧设备 0–4 显示粗档；[9] 的 0/1 作为充电标记 |
+| MouseEnc | 明确 PID、厂商集合、已声明的报告 08 或 20；17 字节请求总和模 256 为 55；先命令 03 查在线，再命令 04 查电量 | payload[5] 百分比、[6] 的 0/1 充电、[7:9] 大端电压；不使用参考项目中的电压百分比曲线 |
+| Weisheng 键盘 | 已列四个身份，报告 04，payload `00 00 1A 06 00 00 00`；回复 payload[2] 必须为 1A | payload[7] 百分比、[8] 的 0/1 充电 |
+| AULA / AJAZZ | 仅六个接收器 PID，厂商集合、33/65 字节，报告 00；GET_DEVICE_INFO 的 10/56、10/48、A0/64 变体，仅读首块 | 验证回复 55、命令、首块地址、长度及非空身份；设备信息 [17] 百分比、[18] 的 0/1 充电；[16] 为有线模式时不使用该电量 |
+
+新增模块独立编写；协议事实参考 [BatteryMonitor 固定版本](https://github.com/JKWTCN/BatteryMonitor/tree/50f628c1ae1ced004e9fa03737cee9d6a561d80e/src/providers/hid) 的 `AsusMouseHidProvider.cpp`、`VgnHidProvider.cpp`、`AulaHidProvider.cpp`，ASUS 另参照 [G-Helper](https://github.com/seerge/g-helper/tree/af7e1c002b1597269d8a977f2464fdab4f5d9fe6/app/Peripherals/Mouse)。没有复制其运行代码、配置写入或电压容量估算。新增身份仅完成软件协议测试，不等于实机兼容认证。

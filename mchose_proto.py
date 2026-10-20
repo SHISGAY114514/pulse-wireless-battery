@@ -6,7 +6,7 @@ does not expose any setting, pairing or firmware command.
 from dataclasses import dataclass
 import time
 import hid_win as hw
-from zowie_proto import serialized
+from hid_transport import serialized
 
 IDENTITIES={(0x5253,p) for p in (0x0011,0x0031,0x00b0,0x1020,0x100a,0x100b)} | {
     (0x3837,p) for p in (0x4018,0x4023,0x4019,0x4021,0x100a,0x100b)}
@@ -50,7 +50,7 @@ def read_status(interfaces):
     candidates=[d for d in interfaces if (d.vid,d.pid) in IDENTITIES
                 and d.usage_page==0xff01 and d.feature_len>=21]
     errors=[]
-    with serialized():
+    with serialized(interfaces):
         for iface in candidates:
             try:
                 with hw.HidDevice(iface.path) as dev:

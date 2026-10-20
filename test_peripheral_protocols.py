@@ -10,7 +10,7 @@ import keyboard_proto as kp
 import mchose_proto as mp
 import logitech_proto as lp
 import razer_proto as rp
-from test_discovery import iface,response
+from test_discovery import iface
 
 
 def mchose_reply(level=4,charging=0,rid=0x11):

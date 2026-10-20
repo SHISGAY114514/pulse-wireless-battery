@@ -71,7 +71,7 @@ def main():
             print(json.dumps([r.to_dict() for r in rows],ensure_ascii=False,indent=2))
         else:
             for row in rows:
-                value=f"{row.level}%" if row.level is not None else (f"{row.voltage:.2f} V" if row.voltage is not None else "--")
+                value=row.value_text
                 print(f"{row.name}: {value}  ·  {row.message}  ·  {row.source}")
         return
     from resident_app import run

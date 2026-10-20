@@ -110,13 +110,15 @@ class Frame:
         p = self.payload
         while i + 2 <= len(p):
             t, ln = p[i], p[i + 1]
+            if i + 2 + ln > len(p):
+                return []
             out.append((t, p[i + 2:i + 2 + ln]))
             i += 2 + ln
-        return out
+        return out if i == len(p) else []
 
 
 def parse_frame(report: bytes) -> Optional[Frame]:
-    if len(report) < 12 or report[1] != 0xFE:
+    if len(report) != REPORT_LEN or report[0:2] != b'\0\xfe':
         return None
     ln = report[8] | (report[9] << 8)
     if 10 + ln + 2 > len(report):
@@ -153,7 +155,7 @@ def query(dev: HidDevice, seq: int, tlv_type: int, ch: int = CH_LOCAL,
         if not r:
             continue
         f = parse_frame(r)
-        if f and f.seq == (seq & 0xFF):
+        if f and f.crc_ok and f.seq == (seq & 0xFF) and f.ch == ch and f.sub in (sub, 3):
             frames.append(f)
     return frames
 
@@ -218,7 +220,7 @@ def read_info(iface: Optional[hw.HidInterface] = None,
                             info.status_code = v[0]
                         if t not in (0x03, 0x14):
                             info.raw_tlvs.append((t, v.hex(" ") if v else "-"))
-            info.online = True
+            info.online = info.battery is not None
             info.detail = (f"设备={info.name or '?'} 固件(dongle/耳机)="
                            f"{info.dongle_firmware or '?'}/{info.headset_firmware or '?'} "
                            f"状态码={info.status_code}")

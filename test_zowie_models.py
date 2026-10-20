@@ -11,7 +11,6 @@ from contextlib import nullcontext
 import device_service as ds
 import hid_win as hw
 import tray_common as tc
-import zowie_profiles as profiles
 import zowie_proto as zp
 
 

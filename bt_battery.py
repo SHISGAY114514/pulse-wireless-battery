@@ -24,7 +24,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
 
-from hid_win import GUID, setupapi, kernel32
+from hid_win import GUID, setupapi
 
 # 蓝牙电量属性：{104EA319-6EE2-4701-BD47-8DDBF425BBE5}, 2
 FMTID_BLUETOOTH = GUID(

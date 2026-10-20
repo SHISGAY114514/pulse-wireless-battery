@@ -42,6 +42,11 @@
 | ROG / Razer / MCHOSE / DAREU 键盘 | 只尝试已列身份和协议 | 按实际回复显示；无有效回复则不可用 | 公开协议适配，尚未逐型号实测，见[键盘支持矩阵](docs/KEYBOARD_SUPPORT.md) |
 | Logitech HID++ | 收录的接收器 / 匹配厂商集合 | 直接百分比、原生粗档或电压，多槽设备分开显示 | 协议适配，无本机设备验证 |
 | 雷蛇 DeathAdder V3 Pro | `1532:00B7` 2.4G 接收器 | 电量百分比、充电状态 | 已实机读取；同协议其他已收录 PID 尚未逐型号实测 |
+| ASUS ROG / TUF 鼠标 | 29 个明确 USB 身份 | 原生百分比或粗档，不把粗档乘成百分比 | 公开协议适配，未在本机实测 |
+| VGN / VXE MouseEnc 鼠标 | 33 个明确 USB 身份 | 在线检查后读取原生百分比及可用电压 | 公开协议适配，未在本机实测 |
+| VGN / ATK Weisheng 键盘 | `320F:5055/5088`、`373B:1028/1029` | 原生百分比、可识别充电状态 | 公开协议适配，未在本机实测 |
+| AULA / AJAZZ 接收器键盘 | `0C45:FEF8/FEF9/FEFA/FEFC/FEFD/FEFE` | GET_DEVICE_INFO 电量 | 公开协议适配，未在本机实测 |
+| DARKRIM 方案耳机 | `3654`，匹配 FF02:0002 / 65 字节集合 | 校验 CRC 与 TLV 后读取电量 | 上游已有路径接入面板，本机未实测 |
 | 标准 HID 电池设备 | 描述符声明的 Feature / Input 电池字段 | 按逻辑范围读取电量百分比 | 通用读取路径，设备仍须实际提供对应字段 |
 | 漫步者 / HECATE G5 MAX | `35BB:A00B` 2.4G 接收器 | 设备返回的百分比、充电状态 | 已实机验证纯 2.4G 读取 |
 | 漫步者 / HECATE G5 MAX | `35BB:A211` USB 有线 | 设备返回的百分比、充电状态 | 已实机验证，界面区分有线连接 |
@@ -68,7 +73,7 @@ python pulse_app.py
 
 不需要安装厂商应用或运行固件更新器。接收器须连接电脑，设备须开机；G5 MAX 无线读取需切到 2.4G 模式。
 
-当前仓库提供源码和打包配置，尚未发布 GitHub Release 安装包。需要独立 EXE 时，可按下方步骤自行打包。
+可在 [GitHub Releases](https://github.com/SHISGAY114514/pulse-wireless-battery/releases/latest) 下载 Windows x64 便携版，解压后运行 `PULSE.exe`。发布页同时提供 SHA256 校验文件；也可按下方步骤自行打包。
 
 ## 界面和后台
 
@@ -122,7 +127,7 @@ python pulse_app.py --quit
 不依赖已连接设备的协议、异常、档位及状态测试：
 
 ```powershell
-python -m unittest -v test_devices test_zowie_models test_discovery test_peripheral_protocols
+python -m unittest discover -v
 ```
 
 有接收器且耳机、鼠标可读时，退出已有 PULSE 后，可做常驻生命周期验收：
@@ -144,11 +149,17 @@ python test_resident_lifecycle.py dist/PULSE.exe
 
 ## 源码结构
 
+电量引擎已拆分为数据模型、通用读取、设备适配和轮询会话，详见 [架构与扩展方法](docs/ARCHITECTURE.md)。不同接收器默认并发读取，卓威各接收器独立维护档位缓冲。
+
 | 文件 | 用途 |
 |---|---|
 | `pulse_app.py` | GUI / CLI 入口 |
 | `modern_ui.py` | 深色电竞桌面面板及设置、详情弹窗 |
-| `device_discovery.py` | 物理设备发现、去重及电量适配器分派 |
+| `device_discovery.py` | 适配器注册表、并发轮询与状态清理 |
+| `readings.py` / `device_identity.py` | 共享数据模型与物理设备身份 |
+| `standard_hid.py` / `device_adapters.py` | 通用电池字段与协议结果转换 |
+| `receiver_protocols.py` / `aula_proto.py` | ASUS、VGN / ATK、AULA / AJAZZ 适配 |
+| `hid_transport.py` | 按物理设备串行化查询 |
 | `razer_proto.py` | 雷蛇电量与充电状态只读协议 |
 | `mchose_proto.py` | 迈从鼠标状态查询与接口白名单 |
 | `keyboard_proto.py` | 已知无线键盘协议与 RK 研究边界 |

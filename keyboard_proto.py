@@ -6,7 +6,7 @@ lighting, reset, pairing or firmware commands are available here.
 from dataclasses import dataclass
 import time
 import hid_win as hw
-from zowie_proto import serialized
+from hid_transport import serialized
 
 
 @dataclass(frozen=True)
@@ -132,7 +132,7 @@ def read_status(items,profile):
         versions='/'.join(sorted({f'{d.version:04X}' for d in items if getattr(d,'version',0)})) or '未知'
         raise hw.HidError(f'当前 USB 版本为 {versions}，已分析的官方 00C1 候选版本为 1024；候选固件由无线芯片上报电量步数，尚未获得电压阈值或已验证的 USB 电量查询。未发送 Report 05 或猜测的厂商命令。')
     errors=[]
-    with serialized():
+    with serialized(items):
         for d in items:
             try:
                 if profile.code=='rog':

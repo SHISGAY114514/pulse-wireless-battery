@@ -21,12 +21,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-import hid_win as hw
 import darkrim_proto as drp
+from hid_transport import serialized
 from hid_win import HidDevice, HidError, HidInterface, HidP_Feature, HidP_Input
 
-USER_PROTOCOL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                  "protocols_user.json")
+USER_PROTOCOL_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "protocols_user.json"
+)
 
 
 # --------------------------------------------------------------------------
@@ -43,11 +44,11 @@ STATUS_TEXT = {
 @dataclass
 class BatteryResult:
     ok: bool
-    level: Optional[int] = None           # 0-100
-    raw_level: Optional[int] = None       # 原始数值
+    level: Optional[int] = None  # 0-100
+    raw_level: Optional[int] = None  # 原始数值
     status: str = "unknown"
     voltage_mv: Optional[int] = None
-    source: str = ""                      # 命中的策略
+    source: str = ""  # 命中的策略
     detail: str = ""
     raw: bytes = b""
     extra: dict = field(default_factory=dict)
@@ -57,17 +58,15 @@ class BatteryResult:
         return STATUS_TEXT.get(self.status, self.status or "未知")
 
 
-def _scale(value: int, logical_max: int = 100) -> int:
-    """把原始数值换算成 0-100。"""
-    if value is None:
+def _scale(value: int, logical_max: int = 100, logical_min: int = 0):
+    """Debug-display helper; invalid and null values remain unknown."""
+    if (
+        value is None
+        or logical_max <= logical_min
+        or not logical_min <= value <= logical_max
+    ):
         return None
-    if logical_max and logical_max > 0 and logical_max != 100:
-        if logical_max == 0xFF and value > 100:
-            return max(0, min(100, round(value * 100 / 255)))
-        return max(0, min(100, round(value * 100 / logical_max)))
-    if value > 100:
-        return max(0, min(100, round(value * 100 / 255)))
-    return max(0, value)
+    return round((value - logical_min) * 100 / (logical_max - logical_min))
 
 
 # --------------------------------------------------------------------------
@@ -79,18 +78,18 @@ class ProtocolSpec:
     vid: int
     usage_page: int
     report_id: int
-    payload: list                       # 紧跟 report id 之后的请求字节
-    length: int                         # 报文总长度（含 report id）
-    level_offset: int                   # 从报文第 0 字节算起的电量字节下标
+    payload: list  # 紧跟 report id 之后的请求字节
+    length: int  # 报文总长度（含 report id）
+    level_offset: int  # 从报文第 0 字节算起的电量字节下标
     wait_ms: int = 120
-    scale: int = 1                      # level = raw * scale
+    scale: int = 1  # level = raw * scale
     charging_offset: Optional[int] = None
     charging_nonzero: bool = True
     voltage_offset: Optional[int] = None  # 小端 16 位
-    level_max: Optional[int] = None       # 超过该值视为无效
-    mode: str = ""                        # "feature" / "output"，留空则自动判断
-    expect: tuple = ()                    # ((字节下标, 期望值), ...) 用于校验回复
-    retries: int = 2                      # 重试次数（第一次常被当作唤醒）
+    level_max: Optional[int] = None  # 超过该值视为无效
+    mode: str = ""  # "feature" / "output"，留空则自动判断
+    expect: tuple = ()  # ((字节下标, 期望值), ...) 用于校验回复
+    retries: int = 2  # 重试次数（第一次常被当作唤醒）
     notes: str = ""
 
     @property
@@ -103,54 +102,98 @@ BUILTIN_PROTOCOLS: list[ProtocolSpec] = [
     # 协议 2：64 字节 Output Report，Report ID 0x08，命令 0x72；Nordic 54L15
     ProtocolSpec(
         name="ATK / VXE 无线鼠标（协议 2）",
-        vid=0x373B, usage_page=0xFF05, report_id=0x08,
+        vid=0x373B,
+        usage_page=0xFF05,
+        report_id=0x08,
         payload=[0x7D, 0x72, 0x02, 0x00, 0x01, 0x07, 0x01],
-        length=64, level_offset=7, wait_ms=100, scale=1, level_max=100,
-        mode="output", expect=((1, 0x72), (5, 0x07)), retries=3,
+        length=64,
+        level_offset=7,
+        wait_ms=100,
+        scale=1,
+        level_max=100,
+        mode="output",
+        expect=((1, 0x72), (5, 0x07)),
+        retries=3,
         notes="电量在回复第 7 字节；第 1 字节固定 0x72 为有效回复标志",
     ),
     # 协议 1：17 字节 Output Report，Report ID 0x08；Nordic 52840
     ProtocolSpec(
         name="ATK / VXE / VGN 无线鼠标（协议 1）",
-        vid=0x373B, usage_page=0xFF02, report_id=0x08,
-        payload=[0x04] + [0x00] * 15 + [0x49],
-        length=17, level_offset=6, wait_ms=100, scale=1, level_max=100,
-        mode="output", expect=(), retries=3,
+        vid=0x373B,
+        usage_page=0xFF02,
+        report_id=0x08,
+        payload=[0x04] + [0x00] * 14 + [0x49],
+        length=17,
+        level_offset=6,
+        wait_ms=100,
+        scale=1,
+        level_max=100,
+        mode="output",
+        expect=((1, 0x04), (2, 0x00)),
+        retries=3,
         notes="电量在回复第 6 字节，第 7 字节非 0 表示有线连接",
     ),
     ProtocolSpec(
         name="VXE / VGN 无线鼠标（协议 1）",
-        vid=0x3554, usage_page=0xFF02, report_id=0x08,
-        payload=[0x04] + [0x00] * 15 + [0x49],
-        length=17, level_offset=6, wait_ms=100, scale=1, level_max=100,
-        mode="output", expect=(), retries=3,
+        vid=0x3554,
+        usage_page=0xFF02,
+        report_id=0x08,
+        payload=[0x04] + [0x00] * 14 + [0x49],
+        length=17,
+        level_offset=6,
+        wait_ms=100,
+        scale=1,
+        level_max=100,
+        mode="output",
+        expect=((1, 0x04), (2, 0x00)),
+        retries=3,
         notes="VXE R1 Pro Max / R1 SE+ / VGN F1 Pro",
     ),
     # Endgame Gear：VID 0x3367，usage page 0xFF01，Report ID 0xA1，64 字节 Feature
     ProtocolSpec(
         name="Endgame Gear（XM2w / OP1W / 无线接收器）",
-        vid=0x3367, usage_page=0xFF01, report_id=0xA1,
-        payload=[0xB4], length=64,
-        level_offset=16, wait_ms=350, scale=1,
-        voltage_offset=17, mode="feature",
-        expect=((1, 0x01),), retries=3,
+        vid=0x3367,
+        usage_page=0xFF01,
+        report_id=0xA1,
+        payload=[0xB4],
+        length=64,
+        level_offset=16,
+        wait_ms=350,
+        scale=1,
+        voltage_offset=17,
+        mode="feature",
+        expect=((1, 0x01),),
+        retries=3,
         notes="byte1 状态：0x01 有效 / 0x03 忙 / 0x07 不支持 / 0x08 鼠标休眠；"
-              "需连读两次，第一次是唤醒",
+        "需连读两次，第一次是唤醒",
     ),
     # VAXEE / ZYGEN：VID 0x3057，usage page 0xFF05，Report ID 0x0E，64 字节 Feature
     ProtocolSpec(
         name="VAXEE / ZYGEN（含 4K 接收器）",
-        vid=0x3057, usage_page=0xFF05, report_id=0x0E,
-        payload=[0xA5, 0x0B, 0x01, 0x01], length=64,
-        level_offset=5, wait_ms=120, scale=5, level_max=20, mode="feature",
+        vid=0x3057,
+        usage_page=0xFF05,
+        report_id=0x0E,
+        payload=[0xA5, 0x0B, 0x01, 0x01],
+        length=64,
+        level_offset=5,
+        wait_ms=120,
+        scale=5,
+        level_max=20,
+        mode="feature",
         notes="以 5% 为步长上报；充电状态用命令 0x10",
     ),
     # Nordic nRF 方案（VID 0x1915）：usage page 0xFFA0，Feature Report 5，32 字节
     ProtocolSpec(
         name="Nordic nRF 方案 2.4G 接收器",
-        vid=0x1915, usage_page=0xFFA0, report_id=0x05,
-        payload=[0x15, 0x00, 0x00, 0x01], length=32,
-        level_offset=9, wait_ms=90, scale=1, mode="feature",
+        vid=0x1915,
+        usage_page=0xFFA0,
+        report_id=0x05,
+        payload=[0x15, 0x00, 0x00, 0x01],
+        length=32,
+        level_offset=9,
+        wait_ms=90,
+        scale=1,
+        mode="feature",
         notes="请求 0x15 读取电量",
     ),
 ]
@@ -168,21 +211,29 @@ def load_user_protocols() -> list[ProtocolSpec]:
     out = []
     for item in data if isinstance(data, list) else []:
         try:
-            out.append(ProtocolSpec(
-                name=item.get("name", "自定义协议"),
-                vid=int(str(item["vid"]), 16) if isinstance(item["vid"], str) else int(item["vid"]),
-                usage_page=int(str(item["usage_page"]), 16) if isinstance(item["usage_page"], str) else int(item["usage_page"]),
-                report_id=int(str(item["report_id"]), 16) if isinstance(item["report_id"], str) else int(item["report_id"]),
-                payload=list(item.get("payload", [])),
-                length=int(item.get("length", 64)),
-                level_offset=int(item.get("level_offset", 0)),
-                wait_ms=int(item.get("wait_ms", 150)),
-                scale=int(item.get("scale", 1)),
-                charging_offset=item.get("charging_offset"),
-                voltage_offset=item.get("voltage_offset"),
-                level_max=item.get("level_max"),
-                notes=item.get("notes", "用户自定义"),
-            ))
+            out.append(
+                ProtocolSpec(
+                    name=item.get("name", "自定义协议"),
+                    vid=int(str(item["vid"]), 16)
+                    if isinstance(item["vid"], str)
+                    else int(item["vid"]),
+                    usage_page=int(str(item["usage_page"]), 16)
+                    if isinstance(item["usage_page"], str)
+                    else int(item["usage_page"]),
+                    report_id=int(str(item["report_id"]), 16)
+                    if isinstance(item["report_id"], str)
+                    else int(item["report_id"]),
+                    payload=list(item.get("payload", [])),
+                    length=int(item.get("length", 64)),
+                    level_offset=int(item.get("level_offset", 0)),
+                    wait_ms=int(item.get("wait_ms", 150)),
+                    scale=int(item.get("scale", 1)),
+                    charging_offset=item.get("charging_offset"),
+                    voltage_offset=item.get("voltage_offset"),
+                    level_max=item.get("level_max"),
+                    notes=item.get("notes", "用户自定义"),
+                )
+            )
         except Exception:
             continue
     return out
@@ -196,21 +247,23 @@ def save_user_protocol(spec: ProtocolSpec) -> None:
                 raw = json.load(f)
         except Exception:
             raw = []
-    raw.append({
-        "name": spec.name,
-        "vid": f"{spec.vid:04X}",
-        "usage_page": f"{spec.usage_page:04X}",
-        "report_id": f"{spec.report_id:02X}",
-        "payload": list(spec.payload),
-        "length": spec.length,
-        "level_offset": spec.level_offset,
-        "wait_ms": spec.wait_ms,
-        "scale": spec.scale,
-        "charging_offset": spec.charging_offset,
-        "voltage_offset": spec.voltage_offset,
-        "level_max": spec.level_max,
-        "notes": spec.notes,
-    })
+    raw.append(
+        {
+            "name": spec.name,
+            "vid": f"{spec.vid:04X}",
+            "usage_page": f"{spec.usage_page:04X}",
+            "report_id": f"{spec.report_id:02X}",
+            "payload": list(spec.payload),
+            "length": spec.length,
+            "level_offset": spec.level_offset,
+            "wait_ms": spec.wait_ms,
+            "scale": spec.scale,
+            "charging_offset": spec.charging_offset,
+            "voltage_offset": spec.voltage_offset,
+            "level_max": spec.level_max,
+            "notes": spec.notes,
+        }
+    )
     with open(USER_PROTOCOL_FILE, "w", encoding="utf-8") as f:
         json.dump(raw, f, ensure_ascii=False, indent=2)
 
@@ -223,59 +276,53 @@ def all_protocols() -> list[ProtocolSpec]:
 # 策略 A：标准 HID 电量字段
 # --------------------------------------------------------------------------
 def strategy_standard_battery_usage(iface: HidInterface) -> Optional[BatteryResult]:
-    if not iface.feature_len:
+    from standard_hid import read
+
+    sample = read([iface])
+    if sample is None:
         return None
-    try:
-        with HidDevice(iface.path, write=False) as dev:
-            caps_list = dev.value_caps(HidP_Feature)
-            for cap in caps_list:
-                key = (cap.UsagePage, cap.u.NotRange.Usage)
-                match = next((b for b in hw.BATTERY_USAGES if b[0] == key[0] and b[1] == key[1]), None)
-                if not match:
-                    continue
-                try:
-                    report = dev.get_feature_report(cap.ReportID)
-                except HidError as e:
-                    return BatteryResult(
-                        ok=False, source="标准 HID 电量字段",
-                        detail=f"接口声明了 {match[2]}，但读取 Feature Report "
-                               f"0x{cap.ReportID:02X} 失败：{e}",
-                    )
-                value = dev.usage_value(HidP_Feature, report, cap)
-                if value is None:
-                    continue
-                level = _scale(value, cap.LogicalMax)
-                return BatteryResult(
-                    ok=True, level=level, raw_level=value,
-                    status="unknown",
-                    source=f"标准 HID 电量字段（{match[2]}）",
-                    detail=f"UsagePage=0x{cap.UsagePage:04X} Usage=0x{cap.u.NotRange.Usage:04X} "
-                           f"ReportID=0x{cap.ReportID:02X} 原始值={value} 上限={cap.LogicalMax}",
-                    raw=report,
-                )
-    except HidError as e:
-        return BatteryResult(ok=False, source="标准 HID 电量字段", detail=str(e))
-    return None
+    return BatteryResult(
+        True,
+        sample.level,
+        sample.raw_level,
+        source="标准 HID 电池字段",
+        detail=sample.detail,
+        raw=sample.report,
+    )
 
 
 # --------------------------------------------------------------------------
 # 策略 A2：DARKRIM（杰理方案）2.4G 耳机 dongle —— 逆向得到的 TLV 协议
 # --------------------------------------------------------------------------
 def strategy_darkrim(iface: HidInterface) -> Optional[BatteryResult]:
-    if (iface.vid != drp.VID or iface.usage_page != drp.USAGE_PAGE
-            or iface.output_len != drp.REPORT_LEN):
+    if (
+        iface.vid != drp.VID
+        or iface.usage_page != drp.USAGE_PAGE
+        or iface.output_len != drp.REPORT_LEN
+    ):
         return None
     info = drp.read_info(iface, timeout=0.35)
     if info.battery is None:
-        return BatteryResult(ok=False, source="DARKRIM 私有协议（TLV）",
-                             detail=info.detail or "没有取到电量字段")
+        return BatteryResult(
+            ok=False,
+            source="DARKRIM 私有协议（TLV）",
+            detail=info.detail or "没有取到电量字段",
+        )
     return BatteryResult(
-        ok=True, level=info.battery, raw_level=info.battery_raw,
-        status="unknown", source="DARKRIM 私有协议（TLV over HID）",
+        ok=True,
+        level=info.battery,
+        raw_level=info.battery_raw,
+        status="unknown",
+        source="DARKRIM 私有协议（TLV over HID）",
         detail=f"{info.detail}；电量 TLV(0x01) 原始值 0x{info.battery_raw:02X}",
-        extra={"name": info.name, "dongle_fw": info.dongle_firmware,
-               "headset_fw": info.headset_firmware, "address": info.address,
-               "status_code": info.status_code, "tlvs": info.raw_tlvs},
+        extra={
+            "name": info.name,
+            "dongle_fw": info.dongle_firmware,
+            "headset_fw": info.headset_firmware,
+            "address": info.address,
+            "status_code": info.status_code,
+            "tlvs": info.raw_tlvs,
+        },
     )
 
 
@@ -288,8 +335,9 @@ def _matches(report: bytes, expect: tuple) -> bool:
     )
 
 
-def _read_report_after_request(dev: HidDevice, spec: ProtocolSpec,
-                               kind: Optional[str] = None) -> bytes:
+def _read_report_after_request(
+    dev: HidDevice, spec: ProtocolSpec, kind: Optional[str] = None
+) -> bytes:
     """按协议发请求、等回复、再读回报文。
 
     kind="feature"：发 Feature Report，直接读回 Feature Report。
@@ -300,12 +348,13 @@ def _read_report_after_request(dev: HidDevice, spec: ProtocolSpec,
     body = ([spec.report_id] + list(spec.payload) + [0] * spec.length)[: spec.length]
     last = b""
     for _ in range(max(1, spec.retries)):
-        dev.drain()
+        if kind == "output":
+            dev.drain()
         if kind == "feature":
-            dev.set_feature_report(bytes(body))
+            dev.set_feature_report(bytes(body), allow_zero_access=True)
             time.sleep(spec.wait_ms / 1000.0)
             last = dev.get_feature_report(spec.report_id, spec.length)
-            if not spec.expect or _matches(last, spec.expect):
+            if last != bytes(body) and (not spec.expect or _matches(last, spec.expect)):
                 return last
             continue
         dev.write_output(bytes(body))
@@ -316,23 +365,38 @@ def _read_report_after_request(dev: HidDevice, spec: ProtocolSpec,
             if not r:
                 continue
             last = r
-            if not spec.expect or _matches(r, spec.expect):
+            if r != bytes(body) and (not spec.expect or _matches(r, spec.expect)):
                 return r
-    return last
+    return b""
 
 
-def _parse_spec_response(spec: ProtocolSpec, report: bytes, iface: HidInterface,
-                         kind: str) -> BatteryResult:
+def _parse_spec_response(
+    spec: ProtocolSpec, report: bytes, iface: HidInterface, kind: str
+) -> BatteryResult:
+    if not report or report[0] != spec.report_id or not _matches(report, spec.expect):
+        return BatteryResult(
+            False, source=spec.name, detail="回复报告 ID 或命令标记不匹配", raw=report
+        )
     if len(report) <= spec.level_offset:
-        return BatteryResult(ok=False, source=spec.name,
-                             detail=f"回复长度不足（{len(report)} 字节）", raw=report)
+        return BatteryResult(
+            ok=False,
+            source=spec.name,
+            detail=f"回复长度不足（{len(report)} 字节）",
+            raw=report,
+        )
     raw_level = report[spec.level_offset]
     if spec.level_max is not None and raw_level > spec.level_max:
-        return BatteryResult(ok=False, source=spec.name,
-                             detail=f"电量字节 0x{raw_level:02X} 超出预期范围", raw=report)
+        return BatteryResult(
+            ok=False,
+            source=spec.name,
+            detail=f"电量字节 0x{raw_level:02X} 超出预期范围",
+            raw=report,
+        )
     level = raw_level * spec.scale
     if not 0 <= level <= 100:
-        return BatteryResult(ok=False,source=spec.name,detail="电量值超出百分比范围",raw=report)
+        return BatteryResult(
+            ok=False, source=spec.name, detail="电量值超出百分比范围", raw=report
+        )
 
     status = "unknown"
     if spec.charging_offset is not None and len(report) > spec.charging_offset:
@@ -349,177 +413,95 @@ def _parse_spec_response(spec: ProtocolSpec, report: bytes, iface: HidInterface,
             voltage = None
 
     return BatteryResult(
-        ok=True, level=level, raw_level=raw_level, status=status,
-        voltage_mv=voltage, source=spec.name,
+        ok=True,
+        level=level,
+        raw_level=raw_level,
+        status=status,
+        voltage_mv=voltage,
+        source=spec.name,
         detail=f"ReportID=0x{spec.report_id:02X} 电量字节@{spec.level_offset}=0x{raw_level:02X}"
-               f" ×{spec.scale}",
+        f" ×{spec.scale}",
         raw=report,
     )
 
 
-def strategy_vendor_protocol(iface: HidInterface, *, include_user: bool = True) -> Optional[BatteryResult]:
-    specs = [s for s in (all_protocols() if include_user else BUILTIN_PROTOCOLS)
-             if s.vid == iface.vid and s.usage_page == iface.usage_page]
+def strategy_vendor_protocol(
+    iface: HidInterface, *, include_user: bool = True
+) -> Optional[BatteryResult]:
+    specs = [
+        s
+        for s in (all_protocols() if include_user else BUILTIN_PROTOCOLS)
+        if s.vid == iface.vid
+        and s.usage_page == iface.usage_page
+        and (iface.feature_len if s.kind == "feature" else iface.output_len) >= s.length
+    ]
     if not specs:
         return None
     last = None
     for spec in specs:
         kind = spec.mode or ("feature" if iface.feature_len else "output")
         try:
-            with HidDevice(iface.path, write=True) as dev:
+            with serialized([iface]), HidDevice(iface.path, write=True) as dev:
                 report = _read_report_after_request(dev, spec, kind)
                 if not report:
-                    last = BatteryResult(ok=False, source=spec.name,
-                                         detail="设备没有回复（多半是外设正在休眠，"
-                                                "动一下鼠标/开机后重试）")
+                    last = BatteryResult(
+                        ok=False,
+                        source=spec.name,
+                        detail="设备没有回复（多半是外设正在休眠，"
+                        "动一下鼠标/开机后重试）",
+                    )
                     continue
                 res = _parse_spec_response(spec, report, iface, kind)
                 if res.ok:
                     return res
                 last = res
         except HidError as e:
-            last = BatteryResult(ok=False, source=spec.name,
-                                 detail=f"收发失败：{e}（可能是权限被占用，"
-                                        f"请关闭厂商驱动软件后重试）")
+            last = BatteryResult(
+                ok=False,
+                source=spec.name,
+                detail=f"收发失败：{e}（可能是权限被占用，请关闭厂商驱动软件后重试）",
+            )
     return last
 
 
 # --------------------------------------------------------------------------
 # 策略 C：罗技 HID++ 2.0
 # --------------------------------------------------------------------------
-HIDPP_DEVICE_INDICES = [0xFF, 1, 2, 3, 4, 5, 6]
-
-_FEATURE_BATTERY_STATUS = 0x1000
-_FEATURE_BATTERY_VOLTAGE = 0x1001
-_FEATURE_UNIFIED_BATTERY = 0x1004
-_FEATURE_DEVICE_NAME = 0x0005
-
-_HIDPP_STATUS = {
-    0: ("discharging", "放电中"),
-    1: ("charging", "充电中"),
-    2: ("charging", "充电中（末段）"),
-    3: ("full", "已充满"),
-    4: ("charging", "充电中（慢速）"),
-    5: ("unknown", "电池类型无效"),
-    6: ("unknown", "温度异常"),
-    7: ("unknown", "充电异常"),
-}
-
-
-def _hidpp_error(report: bytes) -> Optional[int]:
-    if len(report) < 4:
-        return None
-    if report[3] & 0x80:
-        return report[4] if len(report) > 4 else 0xFF
-    return None
-
-
-def _hidpp_call(dev: HidDevice, rid: int, index: int, feature_index: int,
-                function: int, params: list, timeout_ms: int = 260,
-                total_len: Optional[int] = None) -> Optional[bytes]:
-    body = [rid, index, feature_index, ((function & 0x0F) << 4) | 0x01] + list(params)
-    length = total_len or (20 if rid == 0x11 else 7)
-    body = (body + [0] * length)[:length]
-    try:
-        dev.write_output(bytes(body))
-    except HidError:
-        return None
-    deadline = time.monotonic() + timeout_ms / 1000.0
-    while time.monotonic() < deadline:
-        report = dev.read_input(timeout_ms=int(min(0.15, deadline - time.monotonic()) * 1000) or 1)
-        if not report or len(report) < 4:
-            break
-        if report[0] != rid or report[1] != index or report[2] != feature_index:
-            continue
-        if ((report[3] >> 4) & 0x0F) != function:
-            continue
-        return report
-    return None
-
-
-def _hidpp_feature_index(dev: HidDevice, rid: int, index: int, feature_id: int) -> Optional[int]:
-    reply = _hidpp_call(dev, rid, index, 0x00, 0x00,
-                        [feature_id >> 8, feature_id & 0xFF])
-    if not reply or _hidpp_error(reply) is not None:
-        return None
-    # 短报文 / 长报文的返回位置可能不同，逐个试探并验证
-    for pos in (6, 4, 5):
-        if len(reply) > pos and reply[pos]:
-            return reply[pos]
-    return None
-
-
 def strategy_logitech_hidpp(iface: HidInterface) -> Optional[BatteryResult]:
-    if iface.vid != 0x046D or not iface.output_len:
+    # Both frontends use the same validated HID++ implementation.
+    import logitech_proto
+
+    if not logitech_proto.matches([iface]):
         return None
     try:
-        with HidDevice(iface.path, write=True) as dev:
-            for rid in (0x11, 0x10):
-                if dev.caps.OutputReportByteLength and dev.caps.OutputReportByteLength < (
-                        20 if rid == 0x11 else 7):
-                    continue
-                for index in HIDPP_DEVICE_INDICES:
-                    res = _logitech_probe_index(dev, iface, rid, index)
-                    if res is not None:
-                        return res
-    except HidError as e:
-        return BatteryResult(ok=False, source="罗技 HID++",
-                             detail=f"无法打开厂商接口：{e}")
-    return None
-
-
-def _logitech_probe_index(dev: HidDevice, iface: HidInterface, rid: int,
-                          index: int) -> Optional[BatteryResult]:
-    fidx = _hidpp_feature_index(dev, rid, index, _FEATURE_BATTERY_STATUS)
-    if fidx:
-        reply = _hidpp_call(dev, rid, index, fidx, 0x00, [])
-        if reply and _hidpp_error(reply) is None and len(reply) >= 7:
-            raw_level, next_level, st = reply[4], reply[5], reply[6]
-            status, text = _HIDPP_STATUS.get(st, ("unknown", f"状态 {st}"))
-            level = raw_level
-            if level == 0 and status != "discharging":   # 充电时设备常报 0
-                level = {"charging": 80, "full": 100}.get(status, 0)
-            return BatteryResult(
-                ok=True, level=max(0, min(100, level)), raw_level=raw_level,
-                status=status, source="罗技 HID++ 2.0（0x1000 电池状态）",
-                detail=f"设备索引 {index}：电量={raw_level}% 状态={text}",
-                raw=reply,
-            )
-
-    fidx = _hidpp_feature_index(dev, rid, index, _FEATURE_UNIFIED_BATTERY)
-    if fidx:
-        reply = _hidpp_call(dev, rid, index, fidx, 0x00, [])
-        if reply and _hidpp_error(reply) is None and len(reply) >= 6:
-            raw_level, st = reply[4], reply[5]
-            status, text = _HIDPP_STATUS.get(st, ("unknown", f"状态 {st}"))
-            return BatteryResult(
-                ok=True, level=max(0, min(100, raw_level)), raw_level=raw_level,
-                status=status, source="罗技 HID++ 2.0（0x1004 统一电池）",
-                detail=f"设备索引 {index}：电量={raw_level}% 状态={text}", raw=reply,
-            )
-
-    fidx = _hidpp_feature_index(dev, rid, index, _FEATURE_BATTERY_VOLTAGE)
-    if fidx:
-        reply = _hidpp_call(dev, rid, index, fidx, 0x00, [])
-        if reply and _hidpp_error(reply) is None and len(reply) >= 6:
-            mv = reply[4] | (reply[5] << 8)
-            if 2000 <= mv <= 5000:
-                return BatteryResult(
-                    ok=True, level=None, voltage_mv=mv, status="unknown",
-                    source="罗技 HID++ 2.0（0x1001 电池电压）",
-                    detail=f"设备索引 {index}：电压 {mv} mV（该机型不直接给百分比）",
-                    raw=reply,
-                )
-    return None
+        statuses = logitech_proto.read_status([iface])
+        if not statuses:
+            return None
+        item = statuses[0]
+        return BatteryResult(
+            True,
+            item.level,
+            status=("charging" if item.charging else "discharging")
+            if item.charging is not None
+            else "unknown",
+            voltage_mv=round(item.voltage * 1000) if item.voltage else None,
+            source="Logitech HID++",
+            detail=item.note,
+            extra={"band": item.band, "slot": item.slot},
+        )
+    except HidError as exc:
+        return BatteryResult(False, source="Logitech HID++", detail=str(exc))
 
 
 # --------------------------------------------------------------------------
 # 策略 E：监听 Input Report 上报的电量
 # --------------------------------------------------------------------------
-def monitor_input_reports(iface: HidInterface, seconds: float = 3.0,
-                          on_report: Optional[Callable[[bytes], None]] = None,
-                          stop_flag: Optional[Callable[[], bool]] = None
-                          ) -> tuple[Optional[BatteryResult], list[bytes]]:
+def monitor_input_reports(
+    iface: HidInterface,
+    seconds: float = 3.0,
+    on_report: Optional[Callable[[bytes], None]] = None,
+    stop_flag: Optional[Callable[[], bool]] = None,
+) -> tuple[Optional[BatteryResult], list[bytes]]:
     """在若干秒内监听 Input Report，找上报的电量字段。"""
     if not iface.input_len:
         return None, []
@@ -530,11 +512,11 @@ def monitor_input_reports(iface: HidInterface, seconds: float = 3.0,
     found: list[bytes] = []
     result: Optional[BatteryResult] = None
     try:
-        battery_caps = []
-        for cap in dev.value_caps(HidP_Input):
-            key = (cap.UsagePage, cap.u.NotRange.Usage)
-            if any(b[0] == key[0] and b[1] == key[1] for b in hw.BATTERY_USAGES):
-                battery_caps.append(cap)
+        import standard_hid
+
+        battery_caps = [
+            c for c in dev.value_caps(HidP_Input) if any(standard_hid.battery_fields(c))
+        ]
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             if stop_flag is not None and stop_flag():
@@ -547,20 +529,17 @@ def monitor_input_reports(iface: HidInterface, seconds: float = 3.0,
                 on_report(report)
             if result is not None:
                 continue
-            if battery_caps:
-                for cap in battery_caps:
-                    value = dev.usage_value(HidP_Input, report, cap)
-                    if value is None:
-                        continue
-                    result = BatteryResult(
-                        ok=True, level=_scale(value, cap.LogicalMax), raw_level=value,
-                        status="unknown",
-                        source=f"输入报告电量字段（UsagePage=0x{cap.UsagePage:04X} "
-                               f"Usage=0x{cap.u.NotRange.Usage:04X}）",
-                        detail=f"监听 Input Report 得到 原始值={value} 上限={cap.LogicalMax}",
-                        raw=report,
-                    )
-                    break
+            sample = standard_hid.decode(dev, HidP_Input, report, battery_caps)
+            if sample:
+                result = BatteryResult(
+                    True,
+                    sample.level,
+                    sample.raw_level,
+                    source="标准 HID 输入电池字段",
+                    detail=sample.detail,
+                    raw=report,
+                )
+            found = found[-64:]
     except HidError as e:
         return BatteryResult(ok=False, source="输入报告监听", detail=str(e)), found
     finally:
@@ -635,9 +614,15 @@ def probe_report_ids(iface: HidInterface, max_id: int = 0x20) -> list[int]:
     return ok_ids
 
 
-def send_command(iface: HidInterface, rid: int, payload: list[int],
-                 kind: str = "output", length: Optional[int] = None,
-                 wait_ms: int = 350, repeat: int = 2) -> list[bytes]:
+def send_command(
+    iface: HidInterface,
+    rid: int,
+    payload: list[int],
+    kind: str = "output",
+    length: Optional[int] = None,
+    wait_ms: int = 350,
+    repeat: int = 2,
+) -> list[bytes]:
     """按指定方式发一条命令并收集回复（原始探测用）。"""
     replies: list[bytes] = []
     try:
@@ -649,7 +634,7 @@ def send_command(iface: HidInterface, rid: int, payload: list[int],
                     if kind == "feature":
                         iface_len = dev.caps.FeatureReportByteLength or size
                         body = ([rid] + list(payload) + [0] * iface_len)[:iface_len]
-                        dev.set_feature_report(bytes(body))
+                        dev.set_feature_report(bytes(body), allow_zero_access=True)
                         time.sleep(wait_ms / 1000.0)
                         replies.append(dev.get_feature_report(rid, iface_len))
                     else:
@@ -660,7 +645,7 @@ def send_command(iface: HidInterface, rid: int, payload: list[int],
                             r = dev.read_input(timeout_ms=100)
                             if r:
                                 replies.append(r)
-                except HidError as e:
+                except HidError:
                     replies.append(b"")
                     break
     except HidError:
@@ -668,9 +653,11 @@ def send_command(iface: HidInterface, rid: int, payload: list[int],
     return replies
 
 
-def read_battery(iface: HidInterface, listen_seconds: float = 3.0,
-                 progress: Optional[Callable[[str], None]] = None
-                 ) -> list[BatteryResult]:
+def read_battery(
+    iface: HidInterface,
+    listen_seconds: float = 3.0,
+    progress: Optional[Callable[[str], None]] = None,
+) -> list[BatteryResult]:
     """按顺序跑所有策略，返回所有尝试记录（第一条 ok=True 的是结论）。"""
     attempts: list[BatteryResult] = []
     steps = [
@@ -684,7 +671,7 @@ def read_battery(iface: HidInterface, listen_seconds: float = 3.0,
             progress(f"尝试：{label}")
         try:
             res = fn()
-        except Exception as e:               # 单个策略异常不影响其它策略
+        except Exception as e:  # 单个策略异常不影响其它策略
             res = BatteryResult(ok=False, source=label, detail=f"异常：{e}")
         if res is not None:
             attempts.append(res)

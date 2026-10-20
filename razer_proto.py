@@ -8,7 +8,7 @@ from functools import reduce
 import operator
 import time
 import hid_win as hw
-from zowie_proto import serialized
+from hid_transport import serialized
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ def read_status(interfaces):
 def _read_interface(iface):
     model=MODELS[iface.pid]
     notes=[]
-    with serialized(), hw.HidDevice(iface.path) as dev:
+    with serialized([iface]), hw.HidDevice(iface.path) as dev:
         def query(command):
             last=None
             for _ in range(2):

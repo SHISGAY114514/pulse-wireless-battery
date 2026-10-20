@@ -232,10 +232,10 @@ class Dashboard:
             self.text(x+28,244,"插入无线接收器或支持标准 HID 电池字段的外设后，将自动显示。",12,MUTED,width=w-100-x)
         y=h-95
         c.create_line(x,y-10,w-32,y-10,fill=LINE)
-        good=sum(not r.stale and (r.level is not None or r.voltage is not None or bool(r.display_band)) for r in self.rows)
+        good=sum(not r.stale and r.available for r in self.rows)
         self.text(x,y+4,f"{good:02d}",24,CYAN,"bold",family="Bahnschrift")
         self.text(x+42,y+3,"台设备已同步" if not self.busy else "设备同步中",12,INK,"bold")
-        unavailable=[r for r in self.rows if r.receiver and r.level is None and r.voltage is None]
+        unavailable=[r for r in self.rows if r.receiver and not r.available]
         hint=unavailable[0].message if unavailable else f"已发现 {len(self.rows)} 台设备 · 按设备实际协议读取"
         self.text(x+42,y+26,hint,10,MUTED,width=max(240,w-x-270))
         if pages>1:

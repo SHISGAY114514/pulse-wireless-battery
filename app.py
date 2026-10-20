@@ -15,16 +15,14 @@ from __future__ import annotations
 
 import argparse
 import queue
-import sys
 import threading
-import time
 import traceback
 from typing import Optional
 
 import hid_win as hw
 import battery as bt
 import bt_battery as btb
-from hid_win import HidDevice, HidError, HidInterface
+from hid_win import HidDevice, HidInterface
 
 APP_TITLE = "设备电量查看器 · 2.4G 无线外设电池检测"
 ACCENT = "#4f8cff"
@@ -63,7 +61,7 @@ def cli_battery(listen: float = 3.0) -> None:
             print(f"[  --  ] {d.display_name} ({d.vid_pid}) {d.describe_usage()}  {reason}")
 
     bt_devs = btb.displayable_devices()
-    print(f"\n蓝牙设备（HFP 电量）：")
+    print("\n蓝牙设备（HFP 电量）：")
     if not bt_devs:
         print("  未发现蓝牙电量节点（耳机需开机并连上电脑）")
     for d in bt_devs:
@@ -97,7 +95,7 @@ def cli_dump() -> None:
 # ==========================================================================
 def build_ui():
     import tkinter as tk
-    from tkinter import ttk, messagebox, scrolledtext
+    from tkinter import ttk, scrolledtext
 
     BG = "#1b1c1f"
     PANEL = "#232529"
@@ -740,7 +738,7 @@ def build_ui():
                         if v is not None:
                             line += (f"   ← 电量字段 UsagePage=0x{cap.UsagePage:04X} "
                                      f"Usage=0x{cap.u.NotRange.Usage:04X} 原始值={v} "
-                                     f"换算={bt._scale(v, cap.LogicalMax)}%")
+                                     f"换算={bt._scale(v, cap.LogicalMax, cap.LogicalMin)}%")
                     hits = [f"byte[{i}]=0x{b:02X}({b})" for i, b in enumerate(r)
                             if 1 <= b <= 100]
                     if hits and not decoded:

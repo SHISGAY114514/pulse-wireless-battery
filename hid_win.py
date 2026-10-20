@@ -25,7 +25,7 @@ import sys
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 if sys.platform != "win32":
     raise RuntimeError("hid_win.py 仅支持 Windows")
@@ -137,6 +137,24 @@ def _container_group(hdev,info):
     return ''
 
 
+def _usb_parent_group(devinst):
+    """Fallback identity from the USB parent, without merging identical dongles."""
+    cfg = ctypes.WinDLL('cfgmgr32')
+    cfg.CM_Get_Parent.argtypes = [ctypes.POINTER(wintypes.ULONG), wintypes.ULONG, wintypes.ULONG]
+    cfg.CM_Get_Device_IDW.argtypes = [wintypes.ULONG, wintypes.LPWSTR, wintypes.ULONG, wintypes.ULONG]
+    for _ in range(8):
+        buf = ctypes.create_unicode_buffer(512)
+        if cfg.CM_Get_Device_IDW(devinst, buf, len(buf), 0) == 0:
+            value = buf.value.lower()
+            if value.startswith('usb\\vid_') and '&pid_' in value and '&mi_' not in value:
+                return 'usb-parent:' + value
+        parent = wintypes.ULONG()
+        if cfg.CM_Get_Parent(ctypes.byref(parent), devinst, 0) != 0:
+            break
+        devinst = parent.value
+    return ''
+
+
 class SP_DEVICE_INTERFACE_DETAIL_DATA_W(ctypes.Structure):
     _fields_ = [
         ("cbSize", wintypes.DWORD),
@@ -189,6 +207,12 @@ class _RANGE(ctypes.Structure):
     _fields_ = [
         ("UsageMin", wintypes.USHORT),
         ("UsageMax", wintypes.USHORT),
+        ("StringMin", wintypes.USHORT),
+        ("StringMax", wintypes.USHORT),
+        ("DesignatorMin", wintypes.USHORT),
+        ("DesignatorMax", wintypes.USHORT),
+        ("DataIndexMin", wintypes.USHORT),
+        ("DataIndexMax", wintypes.USHORT),
     ]
 
 
@@ -388,7 +412,8 @@ def physical_group_key(path: str) -> str:
     设备接口路径形如：
         \\\\?\\hid#vid_373b&pid_1216&mi_02&col01#7&70aa155&0&0000#{guid}
     其中第 2 段（vid/pid）标识设备，mi_XX 是接口号、colXX 是集合号，
-    第 3 段是每个接口各自的实例号。因此用第 2 段去掉 mi_/col_ 后作为分组键。
+    第 3 段是接口实例号。优先使用枚举时取得的 ContainerId / USB 父节点；
+    最终回退保留实例号，避免仅按 VID/PID 合并两只同型号接收器。
     """
     parts = path.split("#")
     if len(parts) < 2:
@@ -399,7 +424,10 @@ def physical_group_key(path: str) -> str:
         if low.startswith("col") or low.startswith("mi_"):
             continue
         keep.append(p)
-    return "&".join(keep) or parts[1]
+    # Without ContainerId/USB parent/serial, keeping collections separate is
+    # preferable to sending commands across two identical physical receivers.
+    return (("&".join(keep) or parts[1]) + '#' + parts[2].lower()
+            if len(parts) > 2 else path.lower())
 
 
 GENERIC_NAMES = ("HID 设备", "HID-compliant", "USB Composite Device", "HIDI2C Device")
@@ -515,7 +543,7 @@ def enumerate_hid() -> list[HidInterface]:
                 continue
 
             item = _probe_interface(path)
-            item.group = _container_group(hdev,info)
+            item.group = _container_group(hdev,info) or _usb_parent_group(info.DevInst)
             if not item.group:
                 item.group = physical_group_key(path)
                 if item.serial:
@@ -722,6 +750,8 @@ class HidDevice:
         written = wintypes.DWORD(0)
         if not kernel32.WriteFile(self.handle, buf, len(data), ctypes.byref(written), None):
             raise HidError(f"WriteFile 失败 (err={ctypes.get_last_error()})")
+        if written.value != len(data):
+            raise HidError('WriteFile 未发送完整 HID 报告')
 
     def read_input(self, timeout_ms: int = 200,
                    length: Optional[int] = None,
@@ -765,6 +795,9 @@ class HidDevice:
                     return None
                 r = kernel32.WaitForSingleObject(
                     self._read_event, int(min(remain, 0.2) * 1000) or 1)
+                if r == WAIT_FAILED:
+                    self._cancel_read(ov)
+                    raise HidError('等待 HID 输入事件失败')
                 if r == WAIT_OBJECT_0:
                     done = wintypes.DWORD(0)
                     if kernel32.GetOverlappedResult(
@@ -778,10 +811,11 @@ class HidDevice:
     def _cancel_read(self, ov: "OVERLAPPED") -> None:
         """取消挂起的异步读，保证句柄状态干净。"""
         kernel32.CancelIoEx(self._read_handle, ctypes.byref(ov))
-        kernel32.WaitForSingleObject(self._read_event, 200)
         done = wintypes.DWORD(0)
+        # CancelIoEx only requests cancellation. Keep OVERLAPPED and its buffer
+        # alive until the kernel has actually completed the request.
         kernel32.GetOverlappedResult(self._read_handle, ctypes.byref(ov),
-                                     ctypes.byref(done), False)
+                                     ctypes.byref(done), True)
 
     # -- 独立的异步读句柄 ----------------------------------------------
     def _open_reader(self) -> bool:
