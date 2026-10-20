@@ -18,7 +18,7 @@ PULSE 基于该项目修改，并在 GitHub 上保留 Fork 关系和上游提交
 
 PULSE 对部分基础文件作了修改。当前的 `my_devices.py` 为新入口；原版内容可在基线提交中查阅。新版面板、常驻协调及设备适配等新增部分见 `modern_ui.py`、`resident_app.py`、`device_service.py`、`edifier_proto.py`、`zowie_proto.py` 和相关测试。
 
-原项目最初适配 ATK / DARKRIM。本项目默认面板适配 G5 MAX 与 EC2-DW，不能把两者的设备验证范围混为一谈。
+原项目最初适配 ATK / DARKRIM。本项目面板适配 G5 MAX 与卓威多系列无线鼠标，不能把上游设备验证范围与本项目新增适配混为一谈。
 
 ## 协议研究参考：U2-dw-battery-monitor
 
@@ -41,7 +41,7 @@ PULSE 对部分基础文件作了修改。当前的 `my_devices.py` 为新入口
 ## 官方资料与独立验证
 
 - [ZOWIE 官方电量灯使用说明](https://zowie.benq.com/en-us/support/faq/product/application/zowiegear-faq-kn-00019.html)：灯的使用场景和官方显示说明。
-- 本项目另外通过本机 HID 读取、开关机对照及 EC-DW 固件离线分析核对适配逻辑，具体证据边界见 [PROTOCOLS.md](PROTOCOLS.md)。
+- 本项目另外通过本机 HID 读取、开关机对照，以及 EC-DW、FK、ZA13、S2、U2DW、U2 共 11 个固件镜像的实际 ARM 指令离线执行核对适配逻辑；官网下载的 WH 型号关联与镜像哈希见[支持矩阵](ZOWIE_SUPPORT.md)及 [firmware-evidence.json](firmware-evidence.json)。只有本机 EC2-DW 完成实机读取验证。
 
 上述仓库的设备结果不自动构成本项目的兼容性承诺。未经处理的设备记录、固件与抓包不随仓库发布。
 

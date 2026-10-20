@@ -5,7 +5,7 @@
 ![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 [![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威 EC2-DW 显示电压及高中低档**。支持圆角界面、后台常驻、系统托盘和可选的开机自启动。
+一个轻量的 Windows 无线设备电量面板：**漫步者 G5 MAX 显示设备电量百分比，卓威多系列无线鼠标按对应固件的电量灯映射显示电压及高中低档**。支持圆角界面、后台常驻、系统托盘和可选的开机自启动。
 
 **原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
 
@@ -20,7 +20,7 @@
 | [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor) · 协议研究参考 | DW 接收器只读查询、电压缓存行为与分档研究方法 |
 | [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery) · 协议研究参考 | EC-CW 电量查询的调查线索与型号差异参考 |
 
-后两项为研究参考，协议模块独立实现；未复制其运行代码或校准数据。CW、U2-DW 与 EC-DW 的命令或阈值存在差异，PULSE 使用本机验证及 EC-DW 固件分析的结果。完整来源说明、基线提交和授权信息见 [参考项目与来源](docs/REFERENCES.md)及 [NOTICE](NOTICE.md)。[原项目 README](docs/UPSTREAM_README.md)作为原文保留。
+后两项为研究参考，协议模块独立实现；未复制其运行代码或校准数据。PULSE 分别分析 EC-DW、FK、ZA13、S2、U2DW、早期 U2 固件，区分实机验证和离线验证，详见[卓威支持矩阵与证据](docs/ZOWIE_SUPPORT.md)。完整来源说明、基线提交和授权信息见 [参考项目与来源](docs/REFERENCES.md)及 [NOTICE](NOTICE.md)。[原项目 README](docs/UPSTREAM_README.md)作为原文保留。
 
 ## 功能概览
 
@@ -37,8 +37,15 @@
 | 漫步者 / HECATE G5 MAX | `35BB:A00B` 2.4G 接收器 | 设备返回的百分比、充电状态 | 已实机验证纯 2.4G 读取 |
 | 漫步者 / HECATE G5 MAX | `35BB:A211` USB 有线 | 设备返回的百分比、充电状态 | 已实机验证，界面区分有线连接 |
 | 卓威 ZOWIE EC2-DW | `04A5:800A` 2.4G 接收器 | 接收器缓存电压及高/中/低档 | 接收器固件 `8511`、实机鼠标固件 `2524` |
+| EC1/2/3-DW、FK2-DW、ZA13-DW、S2-DW、U2-DW | `04A5:800A`，接收器 `8507 / 8511` | 分系列电压与档位 | 鼠标固件 `2524 / 2526` 已离线验证；其余型号未实机验证 |
+| 上述七款 Glossy 版 | 同上 | 分系列电压与档位 | 仅 `2526`，官网下载共用镜像，离线验证 |
+| 早期 U2 + ER2-80 4K 接收器 | 同上 | U2 电压与档位 | 仅 `2511` 鼠标固件，离线验证 |
+| FK1-DW、ZA12-DW | `04A5:800A` | 仅读取电压，不显示档位 | 缺少对应型号固件 |
+| EC1/2/3-CW | `04A5:8006` | 实验性电压查询，不显示档位 | Windows 未实机验证，缺少固件映射 |
 
-这不是通用外设电量工具。卓威未取得设备原生百分比，不能把电压或高档当成准确容量或充满信号。其他型号、其他固件仍需验证。原项目的 ATK / DARKRIM 调试逻辑保留在源码中，不属于本面板已验证的默认设备。
+**尚未覆盖所有近年卓威无线型号。** U2 原装 `8008` 接收器暂不读取；未知固件不显示档位。接收器 `8507` 已离线核对，只有 `8511` 在本机实测。卓威未取得已验证的原生百分比，不能把高档当成准确容量或充满信号。原项目的 ATK / DARKRIM 调试逻辑保留在源码中，不属于本面板已验证的默认设备。
+
+**首次使用请到“偏好设置 → 卓威鼠标型号”选择实际型号。** DW 共用接收器 USB ID，无法据此自动识别；新安装默认仅读电压。完整型号、版本、阈值和缺口见[支持矩阵](docs/ZOWIE_SUPPORT.md)。
 
 ## 快速开始
 
@@ -66,7 +73,7 @@ python pulse_app.py
 
 ## 卓威档位与更新时间
 
-下表是应用根据 EC-DW 固件阈值及本机观察采用的保守显示规则，不是设备直接返回的档位字节，也不是完整放电校准结果。
+下表是 EC-DW 的保守显示规则，依据固件阈值及本机观察；不是设备直接返回的档位字节，也不是完整放电校准结果。
 
 | 首次读取的电压 | 显示档位 |
 |---|---|
@@ -76,6 +83,8 @@ python pulse_app.py
 
 边界加入缓冲，避免标签来回跳动：低→中需 ≥3.77 V，中→低需 ≤3.74 V；中→高需 ≥3.90 V，高→中需 ≤3.88 V。断开或读取失败后清除缓冲并重判。高档不代表 100%。
 
+FK、ZA13、S2、U2DW 和早期 U2 固件采用不同阈值，首次显示为 ≤3.73 V 低、3.74–3.80 V 中、≥3.81 V 高。应用按所选型号和已核对固件启用规则；详情会显示量化边界的灯档歧义和验证范围。[固件证据与复核方法](docs/ZOWIE_SUPPORT.md)包含 11 个镜像哈希及离线执行脚本。
+
 **软件每 60 秒查询一次，不代表鼠标每 60 秒上报一次。** 电脑读取的是接收器缓存，界面更新时间是查询时间，实际采样时间未知；查询不能强制鼠标重新采样。固件实际无线电压上报周期尚未确定。鼠标版本为零、前后不一致或读取失败时隐藏电压和档位。
 
 更多命令格式、缓存行为和固件分析边界见 [协议说明](docs/PROTOCOLS.md)。
@@ -84,6 +93,8 @@ python pulse_app.py
 
 ```powershell
 python pulse_app.py --once
+python pulse_app.py --list-zowie-models
+python pulse_app.py --zowie-model EC2-DW --once
 python pulse_app.py --json
 python pulse_app.py --background
 python pulse_app.py --show
@@ -102,7 +113,7 @@ python pulse_app.py --quit
 不依赖已连接设备的协议、异常、档位及状态测试：
 
 ```powershell
-python -m unittest -v test_devices
+python -m unittest -v test_devices test_zowie_models
 ```
 
 有接收器且耳机、鼠标可读时，退出已有 PULSE 后，可做常驻生命周期验收：
@@ -128,6 +139,7 @@ python test_resident_lifecycle.py dist/PULSE.exe
 |---|---|
 | `pulse_app.py` | GUI / CLI 入口 |
 | `modern_ui.py` | 圆角桌面面板 |
+| `zowie_profiles.py` | 按型号、固件区分的电量灯映射及验证范围 |
 | `resident_app.py` | 单实例、后台常驻及原生托盘线程 |
 | `device_service.py` | 面板、托盘与命令行共享的设备读取 |
 | `edifier_proto.py` | G5 MAX 状态查询 |

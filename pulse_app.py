@@ -5,10 +5,13 @@ import json
 import sys
 import device_service
 import tray_common as tc
+from zowie_profiles import MODEL_CHOICES, PROFILES
 
 def main():
     parser=argparse.ArgumentParser(description="PULSE · 卓威 / 漫步者设备电量")
     parser.add_argument("--once",action="store_true",help="读取一次并退出")
+    parser.add_argument("--zowie-model",choices=MODEL_CHOICES,help="保存实际卓威型号；auto 仅读电压")
+    parser.add_argument("--list-zowie-models",action="store_true",help="列出型号与验证范围")
     parser.add_argument("--json",action="store_true",help="以 JSON 输出实际读取结果")
     parser.add_argument("--json-file",help="将一次真实读取结果保存为 JSON")
     parser.add_argument("--autostart",choices=["on","off","status"])
@@ -22,6 +25,17 @@ def main():
     parser.add_argument("--refresh",action="store_true",help="让后台刷新电量")
     parser.add_argument("--debug",action="store_true",help=argparse.SUPPRESS)
     args=parser.parse_args()
+    if args.list_zowie_models:
+        if sys.stdout:
+            print("auto: 未选择（仅读电压）")
+            for model, profile in PROFILES.items():
+                print(f"{model}: {profile.evidence}")
+        return
+    if args.zowie_model:
+        cfg=tc.load_config()
+        cfg["zowie_model"]=args.zowie_model
+        tc.save_config(cfg)
+        tc.post_to_tray(tc.MSG_RELOAD)
     if args.status or args.status_file:
         from resident_app import runtime_status
         value=json.dumps(runtime_status(),ensure_ascii=False,indent=2)

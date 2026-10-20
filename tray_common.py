@@ -34,6 +34,7 @@ DEFAULT_CONFIG = {
     "interval": 60,        # 托盘轮询间隔（秒）
     "autostart": False,    # Only enable startup when explicitly selected in settings.
     "auto_refresh": True,
+    "zowie_model": "auto", # Shared receiver IDs cannot identify the paired model.
 }
 
 INTERVAL_CHOICES = [(30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"),
@@ -77,6 +78,9 @@ def load_config() -> dict:
     for key in ("autostart", "auto_refresh"):
         if type(cfg[key]) is not bool:
             cfg[key] = DEFAULT_CONFIG[key]
+    from zowie_profiles import MODEL_CHOICES
+    if not isinstance(cfg["zowie_model"], str) or cfg["zowie_model"] not in MODEL_CHOICES:
+        cfg["zowie_model"] = "auto"
     return cfg
 
 
@@ -232,7 +236,7 @@ def set_autostart(enabled: bool) -> bool:
             startup_lnk(), tray_command()[0],
             arguments="--background" if FROZEN else f'"{os.path.join(BASE_DIR, "pulse_app.py")}" --background',
             workdir=BASE_DIR,
-            description="PULSE 设备电量：卓威 EC2-DW / 漫步者 G5 MAX")
+            description="PULSE 设备电量：卓威无线鼠标 / 漫步者 G5 MAX")
         _set_startup_approved(True)
     else:
         _clear_startup_approved()

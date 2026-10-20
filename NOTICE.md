@@ -4,7 +4,7 @@ PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/
 
 原项目是 PULSE 的代码基础；另外两个卓威项目属于协议研究参考。具体贡献范围和基线提交见 [参考项目与来源](docs/REFERENCES.md)。
 
-本仓库维护者为 [SHISGAY114514](https://github.com/SHISGAY114514)。新增工作包括圆角桌面面板、同进程后台常驻与托盘恢复、自启动设置、漫步者 G5 MAX 状态读取、卓威 EC2-DW 电压与档位显示及相关测试。
+本仓库维护者为 [SHISGAY114514](https://github.com/SHISGAY114514)。新增工作包括圆角桌面面板、同进程后台常驻与托盘恢复、自启动设置、漫步者 G5 MAX 状态读取、卓威多系列固件电量灯映射与型号设置、可复核的离线研究脚本及相关测试。各型号证据与限制见[支持矩阵](docs/ZOWIE_SUPPORT.md)。
 
 ## 项目许可证：MIT
 

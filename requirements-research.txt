@@ -1,0 +1,2 @@
+# Optional offline firmware verification only; not needed by PULSE
+unicorn==2.1.4

@@ -4,7 +4,7 @@
 界面约定
 --------
 * 本文件提供原生窗口、托盘结构及兼容入口；新版行为由 resident_app.py 管理。
-* 通知区域两个图标：卓威 EC2-DW（H/M/L）、漫步者 G5 MAX（数字带深色底板）。
+* 通知区域两个图标：卓威无线鼠标（H/M/L）、漫步者 G5 MAX（数字带深色底板）。
   图标颜色随电量变化：绿 ≥60 / 黄 30-59 / 红 <30。
 * 右键图标显示打开面板、刷新、自启动和退出菜单。
 * 左键图标恢复已有面板。
@@ -158,7 +158,7 @@ KERNEL32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL,
 
 TRAY_ICONS = [
     # (uID, key, 提示名, 是否带底板)
-    (1, "mouse", "卓威 EC2-DW", False),
+    (1, "mouse", "卓威无线鼠标", False),
     (2, "headset", "漫步者 G5 MAX", True),
 ]
 

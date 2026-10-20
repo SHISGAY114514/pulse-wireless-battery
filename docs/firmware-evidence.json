@@ -1,0 +1,993 @@
+{
+  "checked_on": "2026-10-21",
+  "method": "Offline ARM Thumb execution in Unicorn 2.1.4; ADC 0..4095 in startup/running/charging modes; both voltage correction states. No firmware flashed. Hardware-specific getters stubbed to return 0; LED handler entry recorded without driving GPIO.",
+  "images": [
+    {
+      "sha256": "6cf42d12250e0e516783203284820b524deccb3d3ed3f58d8076cefea10eea52",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2524",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "U2DW",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x3454",
+        "encoder": "0x38C0"
+      }
+    },
+    {
+      "sha256": "89926a71870217621032a9c3e0362f5ef84ae47e25eb71987a75019835078e04",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2524",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3473,
+            "handler": "two_leds",
+            "mv": 3761
+          },
+          {
+            "adc": 3591,
+            "handler": "three_leds",
+            "mv": 3888
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3473,
+            "handler": "charging_mid",
+            "mv": 3761
+          },
+          {
+            "adc": 3591,
+            "handler": "charging_high",
+            "mv": 3888
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "ECDW",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x3454",
+        "encoder": "0x38C0"
+      }
+    },
+    {
+      "sha256": "b571b3e0e7903c3bc5a19bdbdc01d3153f622c1776330965f353f173dd641819",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2524",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "FK",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x3454",
+        "encoder": "0x38C0"
+      }
+    },
+    {
+      "sha256": "58c3c6a8160caa88cceef28eb59f51b2005b24aeef0082cc4eec06cf8c085d54",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2524",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "ZA13",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x3454",
+        "encoder": "0x38C0"
+      }
+    },
+    {
+      "sha256": "cae85ebf488b8c18444dc76c54f50a4a020941f8a57f0afe807362fb4c9e7917",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2524",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "S2",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x3454",
+        "encoder": "0x38C0"
+      }
+    },
+    {
+      "sha256": "07885b8fc2504d368446095caae0783af5ed5c798f87b54b8fcabcb2638df9f1",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2526",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3473,
+            "handler": "two_leds",
+            "mv": 3761
+          },
+          {
+            "adc": 3591,
+            "handler": "three_leds",
+            "mv": 3888
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3473,
+            "handler": "charging_mid",
+            "mv": 3761
+          },
+          {
+            "adc": 3591,
+            "handler": "charging_high",
+            "mv": 3888
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "ECDW",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x347C",
+        "encoder": "0x3908"
+      }
+    },
+    {
+      "sha256": "9e692546d8c1c63961e101ad4796d61ef3f527cd67696e43821d24823010c8f9",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2526",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "FK",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x347C",
+        "encoder": "0x3908"
+      }
+    },
+    {
+      "sha256": "1e9690d3d3f942c4862b661ecc2d9039a7b5abe7178b32e0e7f7792915f19956",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2526",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "ZA13",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x347C",
+        "encoder": "0x3908"
+      }
+    },
+    {
+      "sha256": "428e64b4befe873643bcb7671c5b247c10fe90f829fbdf1d0cae2852c9c2c1ef",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2526",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "S2",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x347C",
+        "encoder": "0x3908"
+      }
+    },
+    {
+      "sha256": "add7a3581e6bff2e7630d60e806fc317fc846e5475e8b974e6faa878bbf20f98",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2526",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "U2DW",
+      "functions": {
+        "adc_to_mv": "0x275C",
+        "selector": "0x347C",
+        "encoder": "0x3908"
+      }
+    },
+    {
+      "sha256": "340475345c20b6eabadc67fd71ba9df91a08f4afb004aaad42ce7e1cc55514ff",
+      "flash_base": "0x1000",
+      "mouse_image_version": "2511",
+      "led_transitions": {
+        "startup": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "one_led",
+            "mv": 3680
+          },
+          {
+            "adc": 3447,
+            "handler": "two_leds",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "three_leds",
+            "mv": 3802
+          }
+        ],
+        "running": [
+          {
+            "adc": 0,
+            "handler": "low_blink",
+            "mv": 0
+          },
+          {
+            "adc": 3399,
+            "handler": "off",
+            "mv": 3680
+          }
+        ],
+        "charging": [
+          {
+            "adc": 0,
+            "handler": "charging_low",
+            "mv": 0
+          },
+          {
+            "adc": 3447,
+            "handler": "charging_mid",
+            "mv": 3732
+          },
+          {
+            "adc": 3511,
+            "handler": "charging_high",
+            "mv": 3802
+          }
+        ]
+      },
+      "arithmetic_cases": 8192,
+      "arithmetic_mismatches": [],
+      "limitations": [
+        "Firmware image was not read back from attached mouse flash.",
+        "Voltage unit inferred from conversion and battery range.",
+        "This verifies code behavior, not remaining physical capacity."
+      ],
+      "family": "U2",
+      "functions": {
+        "adc_to_mv": "0x271C",
+        "selector": "0x31B8",
+        "encoder": "0x3580"
+      }
+    }
+  ],
+  "official_downloads": [
+    {
+      "page_model": "ec1-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "EC1-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "EC1-DW",
+      "firmware_zip": [
+        {
+          "Model": "EC1-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "EC2-CW",
+      "firmware_zip": []
+    },
+    {
+      "page_model": "ec2-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "EC2-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "EC2-DW",
+      "firmware_zip": [
+        {
+          "Model": "EC2-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "ec3-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "EC3-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "EC3-DW",
+      "firmware_zip": [
+        {
+          "Model": "EC3-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "FK1-DW",
+      "firmware_zip": []
+    },
+    {
+      "page_model": "fk2-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "FK2-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "FK2-DW",
+      "firmware_zip": [
+        {
+          "Model": "FK2-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "s2-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "S2-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "S2-DW",
+      "firmware_zip": [
+        {
+          "Model": "S2-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "u2-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "U2-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "U2-DW",
+      "firmware_zip": [
+        {
+          "Model": "U2-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "U2",
+      "firmware_zip": []
+    },
+    {
+      "page_model": "ZA12-DW",
+      "firmware_zip": []
+    },
+    {
+      "page_model": "za13-dw-glossy",
+      "firmware_zip": [
+        {
+          "Model": "ZA13-DW-WH",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    },
+    {
+      "page_model": "ZA13-DW",
+      "firmware_zip": [
+        {
+          "Model": "ZA13-DW",
+          "Version": "v2526/v8511",
+          "Download": "https://esupportdownload.benq.com/esupport/GAMING GEAR PRODUCT/Firmware/EC1-DW/FW update tool for ZOWIE DW mouse (optimize performance for reliability)_v2526/v8511_Windows_260529082030.zip"
+        }
+      ]
+    }
+  ],
+  "updater_device_table": {
+    "resource_sha256": "dfa6a75bb256a0969238fc97d782ba2bc925ba211cc57e476626b8353974ace9",
+    "EC-CW": {
+      "mouse_pid": "8005",
+      "receiver_pid": "8006",
+      "isSupportUpdate": false
+    },
+    "U2": {
+      "mouse_pid": "8007",
+      "receiver_pid": "8008",
+      "isSupportUpdate": false
+    },
+    "DW": {
+      "receiver_pid": "800A",
+      "mouse_pids": {
+        "FK": "8009",
+        "S2": "800B",
+        "ZA": "800C",
+        "EC": "800D",
+        "U2DW": "800E"
+      }
+    }
+  },
+  "receivers": [
+    {
+      "firmware": "8511",
+      "sha256": "8377885f2bcc4782cff0234f5ce4b00874ae8499334feca35f928c3cc0051488",
+      "validation": "Offline read dispatch executed; EC2-DW hardware read",
+      "offline_dispatch": {
+        "address": "0x2f4c",
+        "query_cases": 792,
+        "mismatches": 0,
+        "cache_modified": false
+      }
+    },
+    {
+      "firmware": "8507",
+      "sha256": "3fd4503766f2740be37bb12cd160fcc3c3b35b6a6964348533302ebdf903d093",
+      "validation": "Offline read dispatch executed; not hardware tested",
+      "offline_dispatch": {
+        "address": "0x2f44",
+        "query_cases": 792,
+        "mismatches": 0,
+        "cache_modified": false
+      }
+    }
+  ],
+  "u2_official_updater": "https://zowie.benq.com/content/dam/game/en/product/mouse/er-2/software/zowie-mice-firmware-update-tool-v1.0.13.0.exe"
+}

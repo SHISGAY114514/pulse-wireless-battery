@@ -1,4 +1,4 @@
-"""EC2-DW receiver cached-voltage reader, independently implemented.
+"""DW receiver cached-voltage reader, independently implemented.
 
 Protocol cross-reference: github.com/0Mercy/U2-dw-battery-monitor.
 Our 04A5:800A hardware confirms receiver 8511, EC2-DW mouse 2524.
@@ -6,7 +6,7 @@ No capacity percentage or charging flag is supplied by these receiver replies.
 """
 from __future__ import annotations
 import ctypes
-import math
+import zowie_profiles as profiles
 from ctypes import wintypes
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -59,45 +59,44 @@ class Status:
     linked: bool
     reports: list[str]
 
-def voltage_band(voltage,mouse_firmware):
-    """Infer an LED band, not a capacity percentage, from verified EC images.
+def voltage_band(voltage, mouse_firmware, model='EC2-DW'):
+    return profiles.voltage_band(voltage, mouse_firmware, model)
 
-    2524 and 2526 EC-DW use ADC boundaries 3398/3472/3590. Quantization
-    and firmware correction can map different ADCs to the same cached voltage.
-    U2-DW uses different boundaries; its calibration must not be reused here.
-    """
-    if mouse_firmware not in ('2524','2526'):
-        return ''
-    raw=round(voltage*100)
-    bands=set()
-    for adc in range(4096):
-        encoded=max(300,min(500,(adc*0x3ca50//0x38000)//10))
-        if raw not in (encoded,370 if encoded in (368,369) else encoded):
-            continue
-        bands.add(0 if adc<=3398 else 1 if adc<=3472 else 2 if adc<=3590 else 3)
-    labels={0:'低电量提示档',1:'一格',2:'两格',3:'三格'}
-    return ' / '.join(labels[b] for b in sorted(bands)) + ('（边界）' if len(bands)>1 else '') if bands else ''
 
-def display_band(voltage,mouse_firmware,previous=''):
-    """Conservative high/mid/low indication; never a capacity percentage.
+def display_band(voltage, mouse_firmware, previous='', model='EC2-DW'):
+    return profiles.display_band(voltage, mouse_firmware, previous, model)
 
-    EC firmware changes one/two LEDs around 3.76 V and two/three around
-    3.888 V. Cached voltage has 0.01 V resolution. The user confirms mid
-    at 3.88 V; reserve >=3.90 V for high rather than promote the boundary.
-    A one-step dead band holds the previous indication during small changes.
-    State is cleared on unavailable data, not carried across disconnects.
-    """
-    if (mouse_firmware not in ('2524','2526') or voltage is None
-            or not math.isfinite(voltage) or not 3.00<voltage<5.00):
-        return ''
-    raw=round(voltage*100)
-    if previous=='高档' and raw>=389:
-        return '高档'
-    if previous=='低档' and raw<=376:
-        return '低档'
-    if previous=='中档' and 375<=raw<=389:
-        return '中档'
-    return '高档' if raw>=390 else '中档' if raw>=376 else '低档'
+
+def parse_cw_voltage(packet):
+    """Experimental public EC-CW format; no capacity or LED calibration inferred."""
+    if packet and len(packet) == 65 and packet[0] == 0:
+        packet = packet[1:]
+    if not packet or len(packet) != 64 or packet[3] != 0xEC or packet[2] > 100:
+        raise hw.HidError('EC-CW 回复格式未匹配已公开的电压协议')
+    mv = int.from_bytes(packet[:2], 'little')
+    if mv == 0:
+        return None
+    if not 3000 < mv < 5000:
+        raise hw.HidError('EC-CW 电压无效')
+    return mv / 1000
+
+
+def read_cw_voltage(interfaces):
+    # Only selected CW profiles may reach this experimental read request.
+    candidates = [d for d in interfaces if (d.vid, d.pid) == (0x04A5, 0x8006)
+                  and d.usage_page >= 0xFF00 and d.input_len in (64, 65) and d.output_len in (64, 65)]
+    if len(candidates) != 1:
+        raise hw.HidError('需要唯一的 EC-CW 厂商接口（64 / 65 字节）；不猜测其他接口')
+    iface = candidates[0]
+    payload = bytes([0xA5, 0x03]).ljust(64, b'\0')
+    if iface.output_len == 65:
+        payload = b'\0' + payload  # Windows prefix for unnumbered HID reports.
+    with serialized(), hw.HidDevice(iface.path) as reader, hw.HidDevice(iface.path, write=True) as writer:
+        reader.drain()
+        writer.write_output(payload, use_hidd=False)
+        voltage = parse_cw_voltage(reader.read_input(timeout_ms=900))
+    return voltage, ['仅发送公开只读请求 A5 03；EC-CW Windows 传输尚待实机验证']
+
 
 def read_status(interfaces):
     matches=[d for d in interfaces if (d.vid,d.pid)==(0x04a5,0x800a)]
@@ -116,7 +115,7 @@ def read_status(interfaces):
             reports.append(f'{command:02X}: {packet.hex(" ")}')
             return value
         receiver=query(0x40)
-        if receiver!='8511':
+        if receiver not in ('8511', '8507'):
             raise hw.HidError(f'接收器固件 {receiver} 尚未验证')
         before=query(0x25)
         if before=='0000':

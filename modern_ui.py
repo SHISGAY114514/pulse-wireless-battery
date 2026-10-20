@@ -6,9 +6,10 @@ import threading
 import time
 from pathlib import Path
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, ttk
 import device_service as service
 import tray_common as tc
+import zowie_profiles as profiles
 
 BG = "#F3F6F7"
 INK = "#172F38"
@@ -46,6 +47,7 @@ class Dashboard:
         self.resize_timer = None
         self.tray_busy = False
         self.details_window = None
+        self.model_window = None
         self.closed = False
         self.visible = root.state() != "withdrawn"
         self.c = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
@@ -263,7 +265,7 @@ class Dashboard:
         right=w-40
         rounded(self.c,x,139,right-x,h-215,21,fill="#FFFFFF",outline=LINE)
         tx=x+28
-        self.text(tx,166,"同步与启动",17,INK,"bold")
+        self.text(tx,166,"同步、设备与启动",17,INK,"bold")
         self.text(tx,218,"自动刷新电量",14,INK,"bold")
         self.text(tx,245,"关闭窗口后仍会在后台定时同步。",12,MUTED)
         self.toggle(right-76,222,self.auto,self.toggle_auto)
@@ -274,9 +276,9 @@ class Dashboard:
             self.button(tx+i*111,345,101,37,label,lambda s=seconds:self.set_interval(s),
                         fill=INK if chosen else BG,color="#FFFFFF" if chosen else MUTED)
         self.c.create_line(tx,407,right-28,407,fill=LINE)
-        self.text(tx,429,"后台常驻已开启",14,INK,"bold")
-        self.text(tx,457,"关闭窗口仅收起面板；点击托盘图标随时恢复。",12,MUTED)
-        self.button(right-170,431,140,37,"收起到托盘",self.close,
+        self.text(tx,429,"卓威鼠标型号",14,INK,"bold")
+        self.text(tx,457,"当前："+self.cfg["zowie_model"].replace("auto","未选择（仅读电压）"),12,MUTED)
+        self.button(right-170,431,140,37,"选择型号",self.choose_model,
                     fill="#E8F0ED",color=GREEN)
         self.c.create_line(tx,495,right-28,495,fill=LINE)
         self.text(tx,518,"开机启动托盘",14,INK,"bold")
@@ -285,6 +287,48 @@ class Dashboard:
         self.text(tx,h-119,"彻底停止后台运行，请使用右侧退出按钮。",11,MUTED)
         self.button(right-170,h-129,140,37,"退出 PULSE",self.exit_app,
                     fill="#F9E9E6",color="#A4544B")
+
+    def choose_model(self):
+        if self.model_window and self.model_window.winfo_exists():
+            self.model_window.lift()
+            return
+        win=tk.Toplevel(self.root)
+        self.model_window=win
+        win.title("选择卓威鼠标型号")
+        win.geometry("620x410")
+        win.resizable(False,False)
+        win.configure(bg=BG)
+        win.transient(self.root)
+        tk.Label(win,text="按实际型号匹配固件规则",bg=BG,fg=INK,
+                 font=("Microsoft YaHei UI",17,"bold")).pack(anchor="w",padx=26,pady=(24,12))
+        tk.Label(win,text="接收器的 USB 标识和版本号不能区分所有型号。",bg=BG,fg=MUTED,
+                 font=("Microsoft YaHei UI",10)).pack(anchor="w",padx=26)
+        names=["未选择（仅读电压）"]+list(profiles.PROFILES)
+        selected=tk.StringVar(value=names[list(profiles.MODEL_CHOICES).index(self.cfg["zowie_model"])])
+        combo=ttk.Combobox(win,textvariable=selected,values=names,state="readonly",font=("Microsoft YaHei UI",12))
+        combo.pack(fill="x",padx=26,pady=20)
+        info=tk.Label(win,bg=BG,fg=MUTED,justify="left",anchor="nw",wraplength=560,
+                      font=("Microsoft YaHei UI",10))
+        info.pack(fill="x",padx=26)
+        def update(_event=None):
+            model=profiles.MODEL_CHOICES[names.index(selected.get())]
+            p=profiles.get_profile(model)
+            text=(p.evidence+"\n" if p else "选择准确型号后才启用档位。\n")
+            if p and p.thresholds:
+                text+="已核对的鼠标固件："+" / ".join(p.firmwares)+"\n"
+            info.configure(text=text+profiles.policy_text(model)+"\n\n接收器电压为缓存；高档不代表已充满。")
+        combo.bind("<<ComboboxSelected>>",update)
+        def apply():
+            if self.busy:
+                info.configure(text="正在读取设备，请稍后点击保存。")
+                return
+            self.cfg["zowie_model"]=profiles.MODEL_CHOICES[names.index(selected.get())]
+            tc.save_config(self.cfg)
+            win.destroy()
+            self.draw()
+            self.refresh()
+        ttk.Button(win,text="保存并刷新",command=apply).pack(side="bottom",anchor="e",padx=26,pady=22)
+        update()
 
     def set_interval(self,seconds):
         self.cfg["interval"]=seconds
@@ -313,6 +357,7 @@ class Dashboard:
         self.auto=self.cfg["auto_refresh"]
         self.schedule()
         self.draw()
+        self.refresh()
 
     def refresh(self):
         if self.busy or self.closed:
@@ -342,8 +387,12 @@ class Dashboard:
             while True:
                 kind,payload=self.messages.get_nowait()
                 if kind=="readings":
-                    self.rows=payload
+                    # A CLI configuration change may race a read already in flight.
                     self.busy=False
+                    if payload[0].model and payload[0].model != self.cfg["zowie_model"]:
+                        self.refresh()
+                        continue
+                    self.rows=payload
                     if self.tray:
                         self.tray.update_readings(payload)
                     self.schedule()
@@ -385,11 +434,13 @@ class Dashboard:
                f"数据来源：{row.source or '无电量数据'}"]
         if row.firmware:
             lines.append("固件："+row.firmware)
+        if row.verification:
+            lines.append("验证范围："+row.verification)
         if row.voltage is not None:
             lines += [f"最近接收电压：{row.voltage:.2f} V", "采样时间未知；不能直接换算为精确电量百分比。"]
         if row.display_band:
-            lines += ["显示档位："+row.display_band+"（根据电压估算）",
-                      "参考对应：≤3.75 V 低档；3.76–3.89 V 中档；≥3.90 V 高档。",
+            lines += ["显示档位："+row.display_band+"（按所选型号固件映射推断）",
+                      profiles.policy_text(row.model),
                       "分界附近采用缓冲，避免档位反复跳动；高档不表示已充满。"]
         lines += ["", "读取过程"]+["• "+a for a in row.attempts]
         lines += ["", "检测到的接口"]+[f"• {d['collection']}\n  {d['usage']}  输入 {d['input']} / 输出 {d['output']} / Feature {d['feature']}"
@@ -406,6 +457,8 @@ class Dashboard:
         if self.details_window and self.details_window.winfo_exists():
             self.details_window.destroy()
         self.root.withdraw()
+        if self.model_window and self.model_window.winfo_exists():
+            self.model_window.destroy()
         self.visible=False
 
     def show(self):

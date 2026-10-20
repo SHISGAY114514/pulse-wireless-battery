@@ -79,7 +79,7 @@ class ZowieTests(unittest.TestCase):
             input_len=16,output_len=0,feature_len=0,describe_usage=lambda:'FF04')
         s=zp.Status(3.75,'2524','8511',True,[])
         with patch.object(ds,'standard_read',return_value=False),patch.object(zp,'read_status',return_value=s):
-            row=ds.read_mouse([iface])
+            row=ds.read_mouse([iface], "EC2-DW")
         self.assertEqual(row.voltage,3.75)
         self.assertIsNone(row.level)
         self.assertIsNone(row.online)
@@ -114,7 +114,7 @@ class ZowieTests(unittest.TestCase):
                   zp.Status(None,'0000','8511',False,[]),
                   zp.Status(3.89,'2524','8511',True,[])]
         with patch.object(ds,'standard_read',return_value=False),patch.object(zp,'read_status',side_effect=sequence),patch.object(ds,'_mouse_display_band',''):
-            rows=[ds.read_mouse([iface]) for _ in sequence]
+            rows=[ds.read_mouse([iface], "EC2-DW") for _ in sequence]
         self.assertEqual([r.display_band for r in rows],['高档','','中档'])
         self.assertTrue(all(r.level is None for r in rows))
 
@@ -124,7 +124,7 @@ class ZowieTests(unittest.TestCase):
         for result in (zp.Status(None,'0000','8511',False,[]),OSError('timeout')):
             options={'side_effect':result} if isinstance(result,Exception) else {'return_value':result}
             with patch.object(ds,'standard_read',return_value=False),patch.object(zp,'read_status',**options):
-                row=ds.read_mouse([iface])
+                row=ds.read_mouse([iface], "EC2-DW")
             self.assertIsNone(row.voltage)
             self.assertIsNone(row.level)
 
