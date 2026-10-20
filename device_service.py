@@ -39,9 +39,16 @@ class Reading:
     protocol: str = ""
     raw_level: Optional[int] = None
     present: bool = True
+    receiver_key: str = ''
+    stale: bool = False
+    sampled_at: float = 0.0
 
     def to_dict(self):
         return asdict(self)
+
+
+def receiver_count(rows):
+    return len({r.receiver_key or r.key for r in rows if r.present and r.receiver})
 
 def interface_info(iface):
     return {"collection": iface.path.split("#")[1], "usage": iface.describe_usage(),

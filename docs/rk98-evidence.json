@@ -1,0 +1,41 @@
+{
+  "package_sha256": "9542375b53d0cccea12e796302043487a881781431035a2a88534e8806f42bd3",
+  "image_sha256": "1f25668a41bedd6a39550a414ea289b72cd9ef9a9198a8e45161e6f98a673b18",
+  "usb_vid_pid": "258A:00C1",
+  "candidate_bcd_device": "1024",
+  "observed_device_bcd_device": "1023",
+  "initial_step": 9,
+  "step_location": "IRAM direct 0x1F",
+  "radio_branch": "0x9754..0x97A8",
+  "wire_byte_order": [
+    "header",
+    "checksum",
+    "payload0",
+    "payload1"
+  ],
+  "radio_formula_zero_based": "step = 2 * (wire[2] & 7) + ((wire[3] >> 7) & 1)",
+  "valid_radio_cases": 65536,
+  "invalid_radio_cases": 6,
+  "led_branch": "0x5769..0x599A",
+  "led_counts_by_step_0_to_15": [
+    2,
+    2,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    10,
+    10,
+    10,
+    10,
+    10
+  ],
+  "scope": "Candidate 1024 RAM-only branch execution; not live 1023 verification. LED addresses counted; physical key mapping not fully traced.",
+  "voltage_thresholds": null,
+  "usb_battery_query": null
+}

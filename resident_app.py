@@ -9,6 +9,7 @@ import tray_common as tc
 import tray_app as native
 import win_icon
 import hid_win as hw
+import device_service as service
 
 U, K = tc.USER32, tc.KERNEL32
 U.CreatePopupMenu.restype = ctypes.c_void_p
@@ -145,6 +146,7 @@ class ResidentTray(native.TrayApp):
         levels={}
         voltages={}
         bands={}
+        stales={}
         for row in rows:
             if not row.present:continue
             if row.key not in self.device_uids:
@@ -155,6 +157,7 @@ class ResidentTray(native.TrayApp):
             levels[row.key]=(row.level,row.message)
             voltages[row.key]=row.voltage
             bands[row.key]=row.display_band
+            stales[row.key]=row.stale
         if not entries:
             entries=[(1,'app','PULSE',False)]
             levels['app']=(None,'尚未发现电量设备；点击打开面板')
@@ -165,6 +168,7 @@ class ResidentTray(native.TrayApp):
         self.icon_ids.intersection_update(desired)
         self.icon_entries=entries
         self.levels,self.voltages,self.bands=levels,voltages,bands
+        self.stales=stales
         for uid,key,title,plate in entries:
             action=native.NIM_MODIFY if uid in self.icon_ids else native.NIM_ADD
             if self._apply_icon(action,uid,key,title,plate):self.icon_ids.add(uid)
@@ -179,14 +183,21 @@ class ResidentTray(native.TrayApp):
 
     def _apply_icon(self, action, uID, key, title, plate):
         voltage=getattr(self,"voltages",{}).get(key)
-        if voltage is None or self.levels.get(key,(None,''))[0] is not None:
+        band=getattr(self,"bands",{}).get(key,"")
+        if getattr(self,'stales',{}).get(key):
+            nid=self._nid(uID)
+            level,message=self.levels.get(key,(None,''))
+            nid.hIcon=win_icon.make_hicon(str(level) if level is not None else '—',(140,145,150),plate)
+            nid.szTip=f'{title}：{message}；上次缓存，非当前电量'
+            return bool(native.SHELL32.Shell_NotifyIconW(action,ctypes.byref(nid)))
+        if (voltage is None and not band) or self.levels.get(key,(None,''))[0] is not None:
             return super()._apply_icon(action,uID,key,title,plate)
         nid=self._nid(uID)
-        band=getattr(self,"bands",{}).get(key,"")
         glyph,color={"高档":("H",(93,220,138)),"中档":("M",(245,196,81)),
                      "低档":("L",(255,107,107))}.get(band,("V",(150,155,160)))
         nid.hIcon=win_icon.make_hicon(glyph,color,plate)
-        nid.szTip=f"{title}：{band or '档位未知'} · {voltage:.2f} V；电压估算；缓存采样时间未知"
+        nid.szTip=(f"{title}：{band or '档位未知'} · {voltage:.2f} V；电压估算；缓存采样时间未知" if voltage is not None
+                   else f'{title}：{band}；设备原生粗略档位')
         return bool(native.SHELL32.Shell_NotifyIconW(action,ctypes.byref(nid)))
 
     def open_ui(self):
@@ -234,7 +245,7 @@ class ResidentTray(native.TrayApp):
                     | (256 if self.device_notification else 0)
                     | (32 if self.dashboard.auto else 0)
                     | (min(255,sum(r.present for r in self.dashboard.rows)) << 16)
-                    | (min(255,sum(r.receiver for r in self.dashboard.rows)) << 24)
+                    | (min(255,service.receiver_count(self.dashboard.rows)) << 24)
                     | (min(255,len(self.icon_ids)) << 32))
         if msg == self.messages.get("show"):
             self.open_ui()

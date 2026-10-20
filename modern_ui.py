@@ -212,7 +212,7 @@ class Dashboard:
 
     def draw_devices(self,x,w,h):
         c=self.c
-        receivers=sum(r.receiver for r in self.rows)
+        receivers=service.receiver_count(self.rows)
         self.pill(x,119,f"{receivers} 个接收器已连接","#1A2C2C",CYAN,158)
         c.create_text(w-32,132,text=f"自动同步 / {self.cfg['interval']} 秒" if self.auto else "自动同步已暂停",
                       anchor="e",fill=MUTED,font=("Microsoft YaHei UI",-11))
@@ -232,7 +232,7 @@ class Dashboard:
             self.text(x+28,244,"插入无线接收器或支持标准 HID 电池字段的外设后，将自动显示。",12,MUTED,width=w-100-x)
         y=h-95
         c.create_line(x,y-10,w-32,y-10,fill=LINE)
-        good=sum(r.level is not None or r.voltage is not None for r in self.rows)
+        good=sum(not r.stale and (r.level is not None or r.voltage is not None or bool(r.display_band)) for r in self.rows)
         self.text(x,y+4,f"{good:02d}",24,CYAN,"bold",family="Bahnschrift")
         self.text(x+42,y+3,"台设备已同步" if not self.busy else "设备同步中",12,INK,"bold")
         unavailable=[r for r in self.rows if r.receiver and r.level is None and r.voltage is None]
@@ -257,7 +257,7 @@ class Dashboard:
         self.text(x+18,y+20,f"{index+1:02d} / {labels.get(row.kind,'DEVICE')}",9,accent,"bold",family='Consolas')
         self.text(x+18,y+51,row.name,16,INK,"bold",width=w-36)
         number=row.display_band or (str(row.level) if row.level is not None else f'{row.voltage:.2f}' if row.voltage is not None else '—')
-        color=BAND_COLORS.get(row.display_band,RED if row.level is not None and row.level<30 else INK)
+        color=MUTED if row.stale else BAND_COLORS.get(row.display_band,RED if row.level is not None and row.level<30 else INK)
         self.text(x+18,y+110,number,38 if row.display_band else 48,color,'bold',
                   family='Microsoft YaHei UI' if row.display_band else 'Bahnschrift')
         if row.level is not None:
@@ -265,20 +265,22 @@ class Dashboard:
         elif row.voltage is not None:
             self.text(x+20,y+161,f'最近接收 {row.voltage:.2f} V',10,MUTED)
         self.device_art(x+w/2,y+230,row.kind,accent,scale=.65)
-        note='缓存电压 · 采样时间未知' if row.protocol=='zowie' and row.voltage is not None else '正在充电' if row.charging else '设备直接返回电量' if row.level is not None else row.message
+        note=(f"上次电量 · {time.strftime('%H:%M:%S',time.localtime(row.sampled_at))} · 非当前值" if row.stale else
+              '缓存电压 · 采样时间未知' if row.protocol=='zowie' and row.voltage is not None else
+              '正在充电' if row.charging else '设备原生档位' if row.display_band else '设备直接返回电量' if row.level is not None else row.message)
         self.text(x+18,y+h-149,note,10,MUTED,width=w-36)
         by=y+h-106
         if row.display_band:
             for j,band in enumerate(('低档','中档','高档')):
                 bw=(w-36)/3
-                col=BAND_COLORS[band] if row.display_band==band else MUTED
+                col=BAND_COLORS[band] if row.display_band==band and not row.stale else MUTED
                 cut_panel(c,x+18+j*bw,by,bw-4,25,4,fill='#253036',outline=col if row.display_band==band else LINE)
                 c.create_text(x+18+(j+.5)*bw-2,by+12,text=band[0],fill=col,font=('Microsoft YaHei UI',-10))
         else:
             for j in range(20):
                 bw=(w-36)/20
                 active=row.level is not None and j<round(row.level*20/100)
-                c.create_rectangle(x+18+j*bw,by+8,x+18+(j+1)*bw-3,by+17,fill=(RED if row.level<30 else accent) if active else LINE,outline='')
+                c.create_rectangle(x+18+j*bw,by+8,x+18+(j+1)*bw-3,by+17,fill=(MUTED if row.stale else RED if row.level<30 else accent) if active else LINE,outline='')
         c.create_line(x+18,y+h-53,x+w-18,y+h-53,fill=LINE)
         self.text(x+18,y+h-38,'2.4G 接收器' if row.receiver else row.connection,9,MUTED)
         tag=f'detail_{row.key}'
@@ -309,16 +311,17 @@ class Dashboard:
         self.device_art(art_x,art_y,row.kind,accent)
         voltage_only=row.voltage is not None and row.level is None
         number=row.display_band or (str(row.level) if row.level is not None else f"{row.voltage:.2f}" if voltage_only else "—")
-        color=BAND_COLORS.get(row.display_band,INK if row.level is None or row.level>=30 else RED)
+        color=MUTED if row.stale else BAND_COLORS.get(row.display_band,INK if row.level is None or row.level>=30 else RED)
         self.text(x+24,y+146,number,47 if voltage_only else 65,color,"bold",
                   family="Microsoft YaHei UI" if row.display_band else "Bahnschrift")
-        if row.display_band:
+        if row.display_band and row.voltage is not None:
             self.text(x+27,y+211,f"最近接收  {row.voltage:.2f} V",12,MUTED)
         elif row.level is not None:
             self.text(x+26+len(number)*35,y+183,"%",18,MUTED,family="Bahnschrift")
         elif voltage_only:
             self.text(x+142,y+175,"V",18,MUTED,family="Bahnschrift")
-        label=("缓存电压 · 采样时间未知" if row.protocol=='zowie' and voltage_only else "设备电压" if voltage_only else "尚未取得电量" if row.level is None
+        label=(f"上次电量 · {time.strftime('%H:%M:%S',time.localtime(row.sampled_at))} · 非当前值" if row.stale else
+               "设备原生档位" if row.display_band and row.voltage is None else "缓存电压 · 采样时间未知" if row.protocol=='zowie' and voltage_only else "设备电压" if voltage_only else "尚未取得电量" if row.level is None
                else "正在充电" if row.charging else "剩余电量")
         self.text(x+27,y+244,label,10,MUTED)
         by=y+h-107
@@ -327,7 +330,7 @@ class Dashboard:
             for j,band in enumerate(("低档","中档","高档")):
                 selected=band==row.display_band
                 bx=x+24+j*bar_w/3
-                col=BAND_COLORS[band]
+                col=MUTED if row.stale else BAND_COLORS[band]
                 cut_panel(c,bx,by,bar_w/3-6,28,5,fill=mix("#1D272C",col,.18) if selected else "#222830",
                           outline=col if selected else "#303941")
                 c.create_text(bx+(bar_w/3-6)/2,by+14,text=band,
@@ -339,11 +342,12 @@ class Dashboard:
             for j in range(28):
                 segment=bar_w/28
                 active=row.level is not None and j<round(row.level*28/100)
-                col=(CYAN if row.level>=30 else RED) if active else "#30363D"
+                col=(MUTED if row.stale else CYAN if row.level>=30 else RED) if active else "#30363D"
                 c.create_rectangle(x+24+j*segment,by+3,x+24+(j+1)*segment-3,by+13,fill=col,outline="")
         c.create_line(x+24,y+h-53,x+w-24,y+h-53,fill="#344047")
-        state="正在充电" if row.charging else "已同步" if row.voltage is not None or row.level is not None else "等待设备"
-        dot=accent if row.voltage is not None or row.level is not None else MUTED
+        valid=row.voltage is not None or row.level is not None or bool(row.display_band)
+        state="非当前值" if row.stale else "正在充电" if row.charging else "已同步" if valid else "等待设备"
+        dot=accent if valid and not row.stale else MUTED
         c.create_rectangle(x+25,y+h-31,x+29,y+h-27,fill=dot,outline="")
         self.text(x+37,y+h-38,state,10,MUTED)
         tag=f"detail_{row.key}"
@@ -605,13 +609,17 @@ class Dashboard:
         if row.voltage is not None:
             lines += [f"最近接收电压：{row.voltage:.2f} V", "采样时间未知；不能直接换算为精确电量百分比。"]
         if row.level is not None:
-            lines.append(f"设备电量：{row.level}%")
+            lines.append(f"{'上次电量（非当前值）' if row.stale else '设备电量'}：{row.level}%")
+        if row.sampled_at:
+            lines.append('上次成功读取时间：'+time.strftime('%H:%M:%S',time.localtime(row.sampled_at)))
         if row.raw_level is not None:
             lines.append(f"设备原始电量值：{row.raw_level}")
-        if row.display_band:
+        if row.display_band and row.protocol=='zowie':
             lines += ["显示档位："+row.display_band+"（按所选型号固件映射推断）",
                       profiles.policy_text(row.model),
                       "分界附近采用缓冲，避免档位反复跳动；高档不表示已充满。"]
+        elif row.display_band:
+            lines += ['显示档位：'+row.display_band+'（设备协议直接上报，非卓威电压映射）']
         lines += ["", "读取过程"]+["• "+a for a in row.attempts]
         lines += ["", "检测到的接口"]+[f"• {d['collection']}\n  {d['usage']}  输入 {d['input']} / 输出 {d['output']} / Feature {d['feature']}"
                                          for d in row.interfaces]

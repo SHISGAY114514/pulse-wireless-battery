@@ -17,6 +17,7 @@ class Model:
     transaction: int = 0x1F
     receiver: bool = True
     rechargeable: bool = True
+    kind: str = 'mouse'
 
 
 MODELS = {
@@ -52,6 +53,18 @@ MODELS = {
     0x00B9: Model('Razer Basilisk V3 X HyperSpeed',rechargeable=False),
     0x00B4: Model('Razer Naga V2 HyperSpeed',rechargeable=False),
 }
+
+# Same battery commands, keyboard-specific transaction IDs (OpenRazer).
+for wired,wireless,name,wired_transaction in (
+    (0x025a,0x025c,'BlackWidow V3 Pro',0x3f),
+    (0x0258,0x0271,'BlackWidow V3 Mini HyperSpeed',0x1f),
+    (0x0292,0x0290,'DeathStalker V2 Pro',0x1f),
+    (0x0298,0x0296,'DeathStalker V2 Pro TKL',0x1f),
+    (0x02b9,0x02ba,'BlackWidow V4 Mini HyperSpeed',0x1f),
+    (0x02d7,0x02d5,'BlackWidow V4 Tenkeyless HyperSpeed',0x1f),
+):
+    MODELS[wired]=Model('Razer '+name,wired_transaction,False,kind='keyboard')
+    MODELS[wireless]=Model('Razer '+name,0x9f,kind='keyboard')
 
 
 def checksum(message):
@@ -93,9 +106,22 @@ class Status:
 
 def read_status(interfaces):
     candidates=[d for d in interfaces if d.vid==0x1532 and d.pid in MODELS and d.feature_len==91]
-    if len(candidates)!=1:
-        raise hw.HidError('需要唯一的雷蛇 91 字节 Feature 接口')
-    iface=candidates[0]
+    if not candidates:
+        raise hw.HidError('未找到雷蛇 91 字节 Feature 接口')
+    model=MODELS[candidates[0].pid]
+    if model.kind=='keyboard':
+        preferred=3 if candidates[0].pid in (0x0258,0x0271,0x02b9,0x02ba,0x0292,0x0298,0x02d7) else 2
+        candidates.sort(key=lambda d:f'mi_{preferred:02x}' not in d.path.lower())
+    elif len(candidates)!=1:
+        raise hw.HidError('需要唯一的雷蛇鼠标 91 字节 Feature 接口')
+    errors=[]
+    for iface in candidates:
+        try:return _read_interface(iface)
+        except hw.HidError as exc:errors.append(str(exc))
+    raise hw.HidError(errors[-1])
+
+
+def _read_interface(iface):
     model=MODELS[iface.pid]
     notes=[]
     with serialized(), hw.HidDevice(iface.path) as dev:

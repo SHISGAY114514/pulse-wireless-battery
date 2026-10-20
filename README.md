@@ -5,7 +5,7 @@
 ![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 [![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-一个轻量的 Windows 外设电量面板：**动态发现雷蛇、卓威、漫步者及支持标准 HID 电池字段的设备**，按设备协议显示百分比或电压档位。采用深色电竞界面，支持热插拔、动态托盘和可选的开机自启动。[协议支持范围](docs/DEVICE_SUPPORT.md)明确区分实测、实验性适配与暂不支持的设备。
+一个轻量的 Windows 外设电量面板：**动态发现鼠标、键盘和耳机**，按设备协议显示百分比、电压或原生档位。采用深色电竞界面，支持热插拔、动态托盘和可选的开机自启动。[协议支持范围](docs/DEVICE_SUPPORT.md)与[键盘适配说明](docs/KEYBOARD_SUPPORT.md)明确区分实测、实验性适配与暂不支持的设备。
 
 **原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
 
@@ -26,17 +26,21 @@
 ## 功能概览
 
 - 深色切角卡片、细线网格、青色与荧光黄点缀；设备插画由原生 Canvas 绘制，无额外图片依赖。
-- 一处查看鼠标和耳机状态，手动刷新或按设定间隔自动查询。
+- 一处查看鼠标、键盘和耳机状态，手动刷新或按设定间隔自动查询。
 - 按 Windows 物理设备合并 HID 集合，卡片、计数和托盘随设备增删；三张卡片同屏，更多设备分页。
 - 关闭面板后继续在后台运行，点击托盘可恢复已有窗口。
 - 支持开机自启动、单实例启动和彻底退出。
-- 无法读取或设备断开时显示不可用，保留电压缓存与百分比的来源区别。
+- 无法读取时显示不可用；迈从休眠的旧值限时保留并标注“非当前值”，拔出后清除。
 - 运行时仅使用 Python 标准库和 Windows API。
 
 ## 当前支持
 
 | 设备 | 接口 | 显示内容 | 验证范围 |
 |---|---|---|---|
+| 迈从 A7 Ultra | `5253:1020` 接收器 / `5253:0011` 有线 | 直接百分比、充电状态，休眠缓存明确标注 | 已实机验证有线与纯 2.4G |
+| RK R98 | `25A7:FA70` 接收器 / `258A:00C1` 本体 | 已发现，电量未取得 | 官方候选固件已解码，尚无实机电压标定，见[研究报告](docs/RK_R98_RESEARCH.md) |
+| ROG / Razer / MCHOSE / DAREU 键盘 | 只尝试已列身份和协议 | 按实际回复显示；无有效回复则不可用 | 公开协议适配，尚未逐型号实测，见[键盘支持矩阵](docs/KEYBOARD_SUPPORT.md) |
+| Logitech HID++ | 收录的接收器 / 匹配厂商集合 | 直接百分比、原生粗档或电压，多槽设备分开显示 | 协议适配，无本机设备验证 |
 | 雷蛇 DeathAdder V3 Pro | `1532:00B7` 2.4G 接收器 | 电量百分比、充电状态 | 已实机读取；同协议其他已收录 PID 尚未逐型号实测 |
 | 标准 HID 电池设备 | 描述符声明的 Feature / Input 电池字段 | 按逻辑范围读取电量百分比 | 通用读取路径，设备仍须实际提供对应字段 |
 | 漫步者 / HECATE G5 MAX | `35BB:A00B` 2.4G 接收器 | 设备返回的百分比、充电状态 | 已实机验证纯 2.4G 读取 |
@@ -118,7 +122,7 @@ python pulse_app.py --quit
 不依赖已连接设备的协议、异常、档位及状态测试：
 
 ```powershell
-python -m unittest -v test_devices test_zowie_models test_discovery
+python -m unittest -v test_devices test_zowie_models test_discovery test_peripheral_protocols
 ```
 
 有接收器且耳机、鼠标可读时，退出已有 PULSE 后，可做常驻生命周期验收：
@@ -146,6 +150,9 @@ python test_resident_lifecycle.py dist/PULSE.exe
 | `modern_ui.py` | 深色电竞桌面面板及设置、详情弹窗 |
 | `device_discovery.py` | 物理设备发现、去重及电量适配器分派 |
 | `razer_proto.py` | 雷蛇电量与充电状态只读协议 |
+| `mchose_proto.py` | 迈从鼠标状态查询与接口白名单 |
+| `keyboard_proto.py` | 已知无线键盘协议与 RK 研究边界 |
+| `logitech_proto.py` | HID++ 只读电池特征及多槽设备 |
 | `zowie_profiles.py` | 按型号、固件区分的电量灯映射及验证范围 |
 | `resident_app.py` | 单实例、后台常驻及原生托盘线程 |
 | `device_service.py` | 面板、托盘与命令行共享的设备读取 |
