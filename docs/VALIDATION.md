@@ -1,3 +1,13 @@
+# Issue #1 调查验证 · 2026-10-27
+
+- Windows / Python 3.12：`python -m unittest discover -v` 共 103 项通过。新增 11 项原装 U2 诊断测试，覆盖社区报文、错误帧、未知版本提前停止、仅发送 B440 / B415、设备身份隔离、断开停止、时间间断、日志保留及未知采样时间语义。
+- `python -m ruff check .`、`git diff --check` 通过；独立诊断 CLI 帮助可运行。
+- `tools/verify_zowie_u2_service.py` 在 SHA-256 已匹配的 U2 2511 镜像上执行 160 组服务计数测试，无差异；模式 getter 被桩替换，不验证真实时钟、ADC 更新或 RF 送达。
+- 2027 / 8027 报文来自 Issue #1，未在本机该硬件组合上实测。没有发送 B425，没有取得旧固件，没有验证升级或持续无线刷新；详见 [调查报告](U2_8008_INVESTIGATION.md)。
+- 自动读取、`zowie_proto.py` 和 `zowie_profiles.py` 未改动。此次为源码诊断与研究补充，不是 v1.0.0 EXE 的电量刷新修复。
+
+---
+
 # v1.0.0 重构验收 · 2026-10-21
 
 环境：Windows、64 位 Python 3.12.14、PyInstaller 6.22.3。此节为本次验证；后续章节保留此前记录，不代表所有设备在本次重新连接。

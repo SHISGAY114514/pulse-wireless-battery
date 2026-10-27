@@ -169,6 +169,7 @@ python test_resident_lifecycle.py dist/PULSE.exe
 | `device_service.py` | 面板、托盘与命令行共享的设备读取 |
 | `edifier_proto.py` | G5 MAX 状态查询 |
 | `zowie_proto.py` | EC2-DW 只读电压查询及显示分档 |
+| `zowie_u2_diagnostic.py` | 初代 U2 / 8008 独立缓存诊断；[用法与未解决限制](docs/U2_8008_INVESTIGATION.md)，不改变自动显示 |
 | `hid_win.py` | Windows HID 访问 |
 | `tray_common.py` | 配置、自启动及 IPC |
 | `test_devices.py` | 无硬件协议与状态测试 |

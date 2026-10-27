@@ -1,0 +1,10 @@
+{
+  "mouse_firmware": "2511",
+  "sha256": "340475345c20b6eabadc67fd71ba9df91a08f4afb004aaad42ce7e1cc55514ff",
+  "flash_base": "0x1000",
+  "service_address": "0xdc38",
+  "mode_getter_stub": "0x9d7c -> 0 or 4",
+  "cases": 160,
+  "mismatches": 0,
+  "limitations": "Isolated service counter with synthetic RAM and stubbed mode getter; no timer, ADC acquisition, RF or hardware validation; not 2027/8027"
+}
