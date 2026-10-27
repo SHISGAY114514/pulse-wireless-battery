@@ -20,6 +20,8 @@ def main():
         "DEVICE_SUPPORT.md",
         "KEYBOARD_SUPPORT.md",
         "ZOWIE_SUPPORT.md",
+        "U2_8008_INVESTIGATION.md",
+        "u2-service-evidence.json",
         "PROTOCOLS.md",
         "REFERENCES.md",
         "UPSTREAM_README.md",
