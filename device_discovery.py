@@ -14,6 +14,7 @@ import device_adapters as adapters
 import tray_common as tc
 import razer_proto
 import mchose_proto
+import mchose_headset_proto
 import keyboard_proto
 import logitech_proto
 import darkrim_proto
@@ -191,6 +192,10 @@ ADAPTERS = (
     Adapter("zowie", _zowie, read_zowie),
     Adapter("edifier", _edifier, read_edifier),
     Adapter(
+        "mchose-headset", mchose_headset_proto.matches,
+        lambda items, group, session, cfg: [adapters.read_mchose_headset(items, group)],
+    ),
+    Adapter(
         "razer",
         lambda items: any(
             d.vid == 0x1532 and d.pid in razer_proto.MODELS for d in items
@@ -290,7 +295,7 @@ class PollSession:
             # Zowie never borrows a generic percentage or another LED policy.
             if (
                 adapter
-                and adapter.name not in ("zowie", "logitech")
+                and adapter.name not in ("zowie", "logitech", "mchose-headset")
                 and all(r.stale or not r.available for r in rows)
             ):
                 sample = standard_status(items)

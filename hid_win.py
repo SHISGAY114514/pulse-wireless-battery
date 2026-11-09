@@ -739,10 +739,15 @@ class HidDevice:
         if not hid.HidD_SetFeature(self.handle, buf, len(data)):
             raise HidError(f"写 Feature Report 失败 (err={ctypes.get_last_error()})")
 
-    def write_output(self, data: bytes, use_hidd: bool = True) -> None:
+    def write_output(self, data: bytes, use_hidd: bool = True, *, timeout_ms: Optional[int] = None) -> None:
         """发送 Output Report（data[0] 必须是 report id）。"""
         if not self.write_access:
             raise HidError("当前句柄没有写权限，无法发送 Output Report")
+        if timeout_ms is not None:
+            if use_hidd or timeout_ms < 1:
+                raise ValueError('限时输出仅支持异步 WriteFile，timeout_ms 必须为正数')
+            self._write_output_timed(data, timeout_ms)
+            return
         buf = ctypes.create_string_buffer(bytes(data), len(data))
         if use_hidd:
             if hid.HidD_SetOutputReport(self.handle, buf, len(data)):
@@ -752,6 +757,49 @@ class HidDevice:
             raise HidError(f"WriteFile 失败 (err={ctypes.get_last_error()})")
         if written.value != len(data):
             raise HidError('WriteFile 未发送完整 HID 报告')
+
+    def _write_output_timed(self, data: bytes, timeout_ms: int) -> None:
+        """Keep a pending write off the synchronous handle used for metadata.
+
+        Cancellation must complete before freeing its OVERLAPPED/buffer. This
+        opt-in path leaves existing vendor transports unchanged.
+        """
+        handle = kernel32.CreateFileW(
+            self.path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None,
+        )
+        if not handle or handle == INVALID_HANDLE_VALUE:
+            raise HidError(f'无法打开异步 HID 输出 (err={ctypes.get_last_error()})')
+        event = None
+        pending = False
+        ov = OVERLAPPED()
+        buf = ctypes.create_string_buffer(bytes(data), len(data))
+        written = wintypes.DWORD(0)
+        try:
+            event = kernel32.CreateEventW(None, True, False, None)
+            if not event:
+                raise HidError('无法创建 HID 输出事件')
+            ov.hEvent = event
+            if not kernel32.WriteFile(handle, buf, len(data), ctypes.byref(written), ctypes.byref(ov)):
+                if ctypes.get_last_error() != ERROR_IO_PENDING:
+                    raise HidError(f'异步 WriteFile 失败 (err={ctypes.get_last_error()})')
+                pending = True
+                wait = kernel32.WaitForSingleObject(event, timeout_ms)
+                if wait != WAIT_OBJECT_0:
+                    raise HidError('HID 输出超时' if wait == WAIT_TIMEOUT else '等待 HID 输出失败')
+                ok = kernel32.GetOverlappedResult(handle, ctypes.byref(ov), ctypes.byref(written), False)
+                pending = False
+                if not ok:
+                    raise HidError(f'HID 输出未完成 (err={ctypes.get_last_error()})')
+            if written.value != len(data):
+                raise HidError('WriteFile 未发送完整 HID 报告')
+        finally:
+            if pending:
+                kernel32.CancelIoEx(handle, ctypes.byref(ov))
+                kernel32.GetOverlappedResult(handle, ctypes.byref(ov), ctypes.byref(written), True)
+            if event:
+                kernel32.CloseHandle(event)
+            kernel32.CloseHandle(handle)
 
     def read_input(self, timeout_ms: int = 200,
                    length: Optional[int] = None,

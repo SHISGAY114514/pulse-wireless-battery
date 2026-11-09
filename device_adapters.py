@@ -6,6 +6,7 @@ import battery
 import readings as ds
 import hid_win as hw
 import mchose_proto
+import mchose_headset_proto
 import keyboard_proto
 import logitech_proto
 from device_identity import device_key, kind_of
@@ -80,6 +81,30 @@ def read_generic(interfaces, group):
         )
         if result:
             row.attempts.append(result.detail)
+    return row
+
+
+def read_mchose_headset(items, group):
+    row = ds.Reading(
+        "mchose-headset:" + device_key(group), "MCHOSE V9 Turbo+", "无线游戏耳机",
+        "3837:600A", receiver=True, kind="headset", protocol="mchose-headset",
+        connection="2.4G 无线", model="V9 Turbo+",
+        verification="官方 M HUB 电量协议；3837:600A 本机实测",
+    )
+    row.attempts = ["FF90 / Report 55，仅发送电量查询 65 01；6008 灯光底座不参与读取"]
+    try:
+        status = mchose_headset_proto.read_status(items)
+        row.level, row.raw_level = status.level, status.level
+        row.online, row.charging = status.online, status.charging
+        if status.online:
+            row.source = "迈从耳机设备电量"
+            row.message = "正在充电" if status.charging else "已充满" if status.full else "已读取电量"
+            row.sampled_at = time.time()
+        else:
+            row.source, row.message = "耳机未在线", "耳机休眠或未连接"
+    except hw.HidError as exc:
+        row.source, row.message = "耳机电量暂不可用", "接收器已连接，暂未取得有效电量"
+        row.attempts.append(str(exc))
     return row
 
 

@@ -239,7 +239,8 @@ class ResidentTray(native.TrayApp):
         if msg == self.messages.get("status"):
             return (1 | (2 if self.dashboard.visible else 0)
                     | (4 if self.icons_added else 0) | (8 if self.dashboard.busy else 0)
-                    | (16 if any(r.protocol=="edifier" and r.level is not None for r in self.dashboard.rows) else 0)
+                    | (16 if any(r.kind=="headset" and r.present and not r.stale and r.level is not None
+                                 for r in self.dashboard.rows) else 0)
                     | (64 if any(r.protocol=="zowie" and r.voltage is not None for r in self.dashboard.rows) else 0)
                     | (128 if any(r.protocol=="razer" and r.level is not None for r in self.dashboard.rows) else 0)
                     | (256 if self.device_notification else 0)

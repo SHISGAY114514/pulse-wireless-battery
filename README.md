@@ -162,6 +162,7 @@ python test_resident_lifecycle.py dist/PULSE.exe
 | `hid_transport.py` | 按物理设备串行化查询 |
 | `razer_proto.py` | 雷蛇电量与充电状态只读协议 |
 | `mchose_proto.py` | 迈从鼠标状态查询与接口白名单 |
+| `mchose_headset_proto.py` | 迈从 V9 Turbo+ 耳机独立电量协议（3837:600A） |
 | `keyboard_proto.py` | 已知无线键盘协议与 RK 研究边界 |
 | `logitech_proto.py` | HID++ 只读电池特征及多槽设备 |
 | `zowie_profiles.py` | 按型号、固件区分的电量灯映射及验证范围 |
