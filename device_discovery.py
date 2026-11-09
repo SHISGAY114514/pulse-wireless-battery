@@ -274,11 +274,25 @@ class PollSession:
         self.zowie_states = {}
         self.mchose_last = {}
         self.zowie_count = 0
+        self.headset_groups = {}
 
     def clear(self):
         with self.lock:
             self.zowie_states.clear()
             self.mchose_last.clear()
+            self.headset_groups.clear()
+
+    def retry_headsets(self, keys):
+        """Retry cached V9 endpoints only, without enumeration or other devices.
+
+        Full scans replace this snapshot, including removal/replug paths. Every
+        protocol call still opens fresh handles and validates the interface.
+        """
+        with self.lock:
+            cfg = tc.load_config()
+            return [row for group, items in self.headset_groups.items()
+                    if "mchose-headset:" + device_key(group) in keys
+                    for row in self._read_group(group, items, cfg)]
 
     def _read_group(self, group, items, cfg):
         adapter = None
@@ -331,6 +345,8 @@ class PollSession:
     def read(self, interfaces):
         with self.lock:
             groups = physical_groups(interfaces)
+            self.headset_groups = {group: items for group, items in groups
+                                   if mchose_headset_proto.matches(items)}
             active = {group for group, _ in groups}
             for cache in (self.zowie_states, self.mchose_last):
                 for group in set(cache) - active:

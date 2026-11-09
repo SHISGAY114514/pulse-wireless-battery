@@ -221,6 +221,12 @@ def read_headset(interfaces):
     return row
 
 
+def retry_headsets(keys):
+    from device_discovery import default_session
+
+    return default_session.retry_headsets(keys)
+
+
 def read_all():
     try:
         interfaces = hw.enumerate_hid()

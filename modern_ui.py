@@ -10,6 +10,7 @@ from tkinter import ttk
 import device_service as service
 import tray_common as tc
 import zowie_profiles as profiles
+from headset_recovery import HeadsetRecovery
 
 BG = "#101116"
 SIDEBAR = "#14141B"
@@ -75,6 +76,8 @@ class Dashboard:
         self.tray=None
         self.notice=""
         self.timer=None
+        self.recovery=HeadsetRecovery()
+        self.next_refresh=time.monotonic()
         self.resize_timer=None
         self.tray_busy=False
         self.details_window=None
@@ -477,6 +480,7 @@ class Dashboard:
 
     def set_interval(self,seconds):
         self.cfg["interval"]=seconds
+        self.next_refresh=time.monotonic()+seconds
         tc.save_config(self.cfg)
         tc.post_to_tray(tc.MSG_RELOAD)
         self.schedule()
@@ -504,19 +508,36 @@ class Dashboard:
         self.draw()
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, retry_keys=None):
         if self.busy or self.closed:
             return
+        if self.timer:
+            self.root.after_cancel(self.timer)
+            self.timer=None
         self.busy=True
-        self.notice=""
-        self.draw()
+        if retry_keys is None:
+            self.notice=""
+            self.draw()
         def work():
             try:
-                rows=service.read_all()
-                self.messages.put(("readings",rows))
+                rows=service.read_all() if retry_keys is None else service.retry_headsets(retry_keys)
+                self.messages.put(("readings",rows) if retry_keys is None
+                                  else ("headset_readings",(retry_keys,rows)))
             except Exception as exc:
-                self.messages.put(("error",str(exc)))
+                self.messages.put(("error",(retry_keys,str(exc))))
         threading.Thread(target=work,daemon=True).start()
+
+    def scheduled_refresh(self):
+        self.timer=None
+        if self.closed or not self.auto or self.busy:
+            return
+        now=time.monotonic()
+        if now>=self.next_refresh:
+            self.refresh()
+        else:
+            keys=self.recovery.due_keys(now)
+            if keys:self.refresh(retry_keys=keys)
+            else:self.schedule()
 
     def devices_changed(self):
         self.devices_dirty=True
@@ -533,8 +554,9 @@ class Dashboard:
         if self.timer:
             self.root.after_cancel(self.timer)
             self.timer=None
-        if self.auto and not self.closed:
-            self.timer=self.root.after(self.cfg["interval"]*1000,self.refresh)
+        if self.auto and not self.closed and not self.busy:
+            delay=max(1,int((self.recovery.next_due(self.next_refresh)-time.monotonic())*1000))
+            self.timer=self.root.after(delay,self.scheduled_refresh)
 
     def pump(self):
         if self.closed:
@@ -551,15 +573,40 @@ class Dashboard:
                         self.refresh()
                         continue
                     self.rows=payload
+                    now=time.monotonic()
+                    self.next_refresh=now+self.cfg["interval"]
+                    self.recovery.record(payload,now,full=True)
                     if self.tray:
                         self.tray.update_readings(payload)
                     self.schedule()
                     if self.devices_dirty and self.discovery_timer is None:self.refresh_devices()
+                elif kind=="headset_readings":
+                    self.busy=False
+                    retry_keys,payload=payload
+                    self.recovery.record(payload,time.monotonic(),requested=retry_keys)
+                    updates={r.key:r for r in payload}
+                    changed=False
+                    for index,row in enumerate(self.rows):
+                        if row.key not in updates:continue
+                        new=updates[row.key]
+                        # Ignore timestamps when deciding whether to redraw/rebuild icons.
+                        fields=("level","online","charging","stale","present","message","source","attempts")
+                        changed |= any(getattr(row,f)!=getattr(new,f) for f in fields)
+                        self.rows[index]=new
+                    if changed and self.tray:self.tray.update_readings(self.rows)
+                    self.schedule()
+                    if self.devices_dirty and self.discovery_timer is None:self.refresh_devices()
+                    if not changed or not self.visible:continue
                 elif kind=="tray":
                     self.tray_busy=False
                     self.notice="托盘已启动" if payload else "托盘启动失败"
                 elif kind=="error":
                     self.busy=False
+                    retry_keys,_=payload
+                    if retry_keys is None:
+                        self.next_refresh=time.monotonic()+self.cfg["interval"]
+                    else:
+                        self.recovery.defer(retry_keys,time.monotonic())
                     self.notice="读取失败，请重试"
                     self.schedule()
                 elif kind=="action":
