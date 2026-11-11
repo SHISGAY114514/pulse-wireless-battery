@@ -16,9 +16,10 @@
 
 ## 本地开发
 
-使用 Windows 和包含 tkinter 的 64 位 Python 3.10+。运行源码不需要第三方包：
+使用 Windows 和包含 tkinter 的 64 位 Python 3.10+。界面使用 Pillow，先安装运行依赖：
 
 ```powershell
+python -m pip install -r requirements.txt
 python pulse_app.py
 python -m unittest -v test_devices
 ```

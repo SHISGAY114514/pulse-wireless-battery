@@ -14,7 +14,13 @@ PULSE 基于 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/
 
 原作者 yszyszysz233、维护者 SHISGAY114514 及 PULSE 贡献者的署名保留在 `LICENSE`、本说明及 Git 历史中。依赖项和第三方材料若有各自许可证，仍适用其原有条款。
 
-协议研究参考：
+## Pillow 运行依赖
+
+液态玻璃界面使用 Pillow 生成图片。Pillow 按 MIT-CMU 许可证发布，保留 PIL / Pillow 作者的版权声明；其二进制分发中附带的库各自适用原有许可证。
+
+[第三方许可全文](docs/THIRD_PARTY_LICENSES.txt) 完整保留 Pillow 12.3.0 官方安装包的 `licenses/LICENSE`，包含 Pillow 和附带库的声明，随源码、独立 EXE 与便携 ZIP 分发。构建时还将实际安装的 Pillow 分发元数据及其许可目录收入 EXE，保留该次构建使用版本的完整许可。
+
+## 协议研究参考
 
 - [yleshchuk/zowie-battery](https://github.com/yleshchuk/zowie-battery)：EC-CW 系列的协议说明；该项目声明 GPL-3.0-or-later。PULSE 没有复制其运行代码或通用电压曲线。
 - [0Mercy/U2-dw-battery-monitor](https://github.com/0Mercy/U2-dw-battery-monitor)：DW 系列只读电压命令、缓存行为等研究。PULSE 的协议模块独立实现，没有复制其运行代码、校准文件或百分比算法；采用相同的已公开互斥量名称以协调共同使用接口的工具。

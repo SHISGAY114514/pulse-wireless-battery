@@ -16,6 +16,8 @@ def main():
         files[name] = repo / name
     for name in (
         "ARCHITECTURE.md",
+        "UI_DESIGN.md",
+        "THIRD_PARTY_LICENSES.txt",
         "VALIDATION.md",
         "DEVICE_SUPPORT.md",
         "KEYBOARD_SUPPORT.md",

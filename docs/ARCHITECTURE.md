@@ -30,6 +30,14 @@
 
 拔出设备清除该物理设备状态；扫描失败清除会话缓存。迈从缓存最多保留十分钟，明确标注非当前值，不继承充电状态，系统时钟回退时不使用未来缓存。卓威固件、型号、接口变化与读取失败继续重置档位缓冲。
 
+## 桌面渲染与交互
+
+`modern_ui.Dashboard` 使用原生 Tk Canvas 组织浅银液态玻璃界面，Pillow 生成并缓存玻璃背景与设备插图。模糊、折射、高光及半透明合成针对应用内背景，不读取窗口后面的桌面，也不表示原生桌面穿透。视觉与交互约定见 [UI_DESIGN.md](UI_DESIGN.md)。
+
+悬停、点击、切页和同步进度由 Tk 主线程更新，设备读取仍通过工作线程和消息队列返回。玻璃材质与插图复用缓存，避免逐帧重新生成；面板隐藏时停止视觉动画，自动查询、设备通知与耳机恢复调度继续按既有设置运行。退出时清理动画回调与后台资源。
+
+源码运行依赖列在 `requirements.txt`：Python 3.10+、自带的 tkinter 和 Pillow。`requirements-build.txt` 引用运行依赖并增加 PyInstaller；便携 EXE 包含运行所需库，用户无需另装 Python 或 Pillow。
+
 ## 通用 HID
 
 仅使用描述符声明的电池字段，支持 Feature、Input、Usage Range、非零逻辑下限与有符号值。同一报告 ID 一轮只 GET 一次；一个字段或报告失败后继续尝试其余字段。GET_INPUT_REPORT 无有效电量时，只在声明的电池 Input ID 中短时监听。错误 ID、空值、逻辑范围外值均不截断成 0% 或 100%。调试窗口与常驻面板共用这一实现。
@@ -47,6 +55,7 @@ Windows 的同步 Feature IOCTL 由系统驱动完成，不能承诺对故障第
 ## 验证与打包
 
 ```powershell
+python -m pip install -r requirements.txt
 python -m unittest discover -v
 python -m pip install ruff==0.17.1
 python -m ruff check .
