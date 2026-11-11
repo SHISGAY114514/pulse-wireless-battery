@@ -1,11 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import copy_metadata
+
 
 a = Analysis(
     ['pulse_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('pulse.ico', '.')],
+    datas=[('pulse.ico', '.'), ('docs/THIRD_PARTY_LICENSES.txt', 'docs')]
+          + copy_metadata('Pillow'),
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -6,3 +6,6 @@
 *.spec text eol=lf
 LICENSE text eol=lf
 *.ico binary
+
+# Preserve the upstream third-party license text byte-for-byte.
+docs/THIRD_PARTY_LICENSES.txt -text -whitespace

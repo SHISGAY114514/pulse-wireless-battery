@@ -5,7 +5,7 @@
 ![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 [![Upstream](https://img.shields.io/badge/Upstream-2.4G--battery--viewer-5865F2.svg)](https://github.com/yszyszysz233/2.4G-battery-viewer)
 
-一个轻量的 Windows 外设电量面板：**动态发现鼠标、键盘和耳机**，按设备协议显示百分比、电压或原生档位。采用深色电竞界面，支持热插拔、动态托盘和可选的开机自启动。[协议支持范围](docs/DEVICE_SUPPORT.md)与[键盘适配说明](docs/KEYBOARD_SUPPORT.md)明确区分实测、实验性适配与暂不支持的设备。
+一个轻量的 Windows 外设电量面板：**动态发现鼠标、键盘和耳机**，按设备协议显示百分比、电压或原生档位。采用浅银与冰青色的液态玻璃界面，支持热插拔、动态托盘和可选的开机自启动。[协议支持范围](docs/DEVICE_SUPPORT.md)与[键盘适配说明](docs/KEYBOARD_SUPPORT.md)明确区分实测、实验性适配与暂不支持的设备。
 
 **原项目：[yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)**。PULSE 是在该项目基础上开发的适配版本，保留原作者源码、署名和 Git 历史。
 
@@ -25,14 +25,15 @@
 
 ## 功能概览
 
-- 深色切角卡片、细线网格、青色与荧光黄点缀；设备插画由原生 Canvas 绘制，无额外图片依赖。
+- 浅银玻璃卡片、柔和光晕、冰青色高光与半透明层次；Pillow 缓存应用内背景折射和设备插图，详见[界面设计](docs/UI_DESIGN.md)。
+- 悬停高光、点击反馈、切页过渡与同步进度动效；收起到托盘后停止界面动画。
 - 一处查看鼠标、键盘和耳机状态，手动刷新或按设定间隔自动查询。
 - V9 Turbo+ 后开机或休眠恢复时，未取得电量的耳机单独低频重试，成功后恢复普通刷新间隔。
 - 按 Windows 物理设备合并 HID 集合，卡片、计数和托盘随设备增删；三张卡片同屏，更多设备分页。
 - 关闭面板后继续在后台运行，点击托盘可恢复已有窗口。
 - 支持开机自启动、单实例启动和彻底退出。
 - 无法读取时显示不可用；迈从鼠标休眠的旧值限时保留并标注“非当前值”，拔出后清除；V9 Turbo+ 读取失败时不沿用旧电量。
-- 运行时仅使用 Python 标准库和 Windows API。
+- 运行时使用 Python、tkinter、Windows API 与 Pillow；便携版已包含所需依赖。
 
 ## 当前支持
 
@@ -65,11 +66,12 @@
 
 ## 快速开始
 
-Windows 10/11、64 位 Python 3.10+，包含 tkinter；开发验证使用 Python 3.12。运行时只使用 Python 标准库与 Windows 自带 API，无第三方运行依赖。
+Windows 10/11、64 位 Python 3.10+，包含 tkinter；开发验证使用 Python 3.12。源码版需安装 Pillow，用于缓存玻璃材质和设备插图。
 
 ```powershell
 git clone https://github.com/SHISGAY114514/pulse-wireless-battery.git
 cd pulse-wireless-battery
+python -m pip install -r requirements.txt
 python pulse_app.py
 ```
 
@@ -79,7 +81,7 @@ python pulse_app.py
 
 ## 界面和后台
 
-- 关闭面板仅隐藏窗口，后台继续按设定间隔查询。
+- 关闭面板仅隐藏窗口并停止界面动画，后台继续按设定间隔查询。
 - 左键托盘图标恢复同一面板；重复启动也会恢复已有实例。
 - 右键托盘可打开面板、刷新、切换开机自启动或彻底退出。
 - 在偏好设置中调整自动刷新及间隔，自启动默认关闭。
@@ -156,7 +158,7 @@ python test_resident_lifecycle.py dist/PULSE.exe
 | 文件 | 用途 |
 |---|---|
 | `pulse_app.py` | GUI / CLI 入口 |
-| `modern_ui.py` | 深色电竞桌面面板及设置、详情弹窗 |
+| `modern_ui.py` | 浅银液态玻璃桌面面板、交互动画及设置、详情弹窗 |
 | `device_discovery.py` | 适配器注册表、并发轮询与状态清理 |
 | `readings.py` / `device_identity.py` | 共享数据模型与物理设备身份 |
 | `standard_hid.py` / `device_adapters.py` | 通用电池字段与协议结果转换 |
